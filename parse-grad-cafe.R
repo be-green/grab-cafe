@@ -3,14 +3,16 @@ library(magrittr)
 library(data.table)
 library(httr)
 library(stringr)
+library(reticulate)
+reticulate::use_virtualenv("bot-env")
 
 existing <- fread("messages.csv")
 
 s <- rvest::read_html("https://www.thegradcafe.com/survey/?institution=&program=economics") %>% 
   html_element("#results-container") %>% 
-  html_children
+  html_elements(".col")
 
-l <- lapply(s[2:9], html_text) %>% 
+l <- lapply(s, html_text) %>% 
   sapply(function(x) {
     x <- str_split(x, "\t\t\t", simplify = F)
     x  <- x[[1]]
@@ -23,13 +25,16 @@ l <- lapply(s[2:9], html_text) %>%
     first <- paste0(x, collapse = "; ")
     first <- str_replace_all(first, second, "") %>% 
       str_replace_all(";","") %>% 
-      str_trim
+      str_trim %>% 
+      str_replace_all("  ", ": ")
     paste0(first,"\n",second)
   })
+
+l <- subset(l, l != "NA\nNA")
   
 l <- setdiff(l, existing$Messages)
 
 if(length(l) > 0) {
-  fwrite(data.table(Index = (max(existing$Index) + 1):(max(existing$Index) + length(l)), Messages = l), "messages.csv")
+  fwrite(data.table(Index = (max(existing$Index) + 1):(max(existing$Index) + length(l)), Messages = l), "messages.csv", append = T)
+  fwrite(data.table(Index = 1:length(l), Messages = l), "new_messages.csv")
 }
-  
