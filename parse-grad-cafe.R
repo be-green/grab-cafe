@@ -12,8 +12,10 @@ s <- rvest::read_html("https://www.thegradcafe.com/survey/?institution=&program=
   html_element("#results-container") %>% 
   html_elements(".col")
 
-l <- lapply(s, html_text) %>% 
-  sapply(function(x) {
+l <- sapply(s, function(x) {
+    link <- html_elements(x, "a") %>% html_attr("href")
+    link <- paste0("https://www.thegradcafe.com", link)
+    x <- html_text(x)
     x <- str_split(x, "\t\t\t", simplify = F)
     x  <- x[[1]]
     x <- subset(x, str_detect(x, "[A-Za-z0-9]+"))
@@ -27,10 +29,11 @@ l <- lapply(s, html_text) %>%
       str_replace_all(";","") %>% 
       str_trim %>% 
       str_replace_all("  ", ": ")
-    paste0(first,"\n",second)
+    paste0(first,"\n",second, "\n",link) 
   })
 
-l <- subset(l, l != "NA\nNA")
+
+l <- subset(l, !str_detect(l, "NA\nNA"))
   
 l <- setdiff(l, existing$Messages)
 
