@@ -1,0 +1,188 @@
+import requests
+from bs4 import BeautifulSoup
+import re
+import time
+from typing import List, Dict, Optional
+from database import posting_exists, posting_exists_recent, add_posting
+
+GRADCAFE_BASE_URL = "https://www.thegradcafe.com/survey/?institution=&program=economics"
+
+def scrape_gradcafe_page(page: int = 1) -> List[Dict]:
+    url = GRADCAFE_BASE_URL if page == 1 else f"{GRADCAFE_BASE_URL}&page={page}"
+
+    try:
+        response = requests.get(url, timeout=30)
+        response.raise_for_status()
+    except requests.RequestException as e:
+        print(f"Error fetching GradCafe page {page}: {e}")
+        return []
+
+    soup = BeautifulSoup(response.content, 'html.parser')
+    rows = soup.find_all('tr')
+
+    if not rows:
+        print("No table rows found on page")
+        return []
+
+    postings = []
+    i = 1
+
+    while i < len(rows):
+        row = rows[i]
+        cells = row.find_all('td')
+
+        if len(cells) != 5:
+            i += 1
+            continue
+
+        school = cells[0].get_text(strip=True)
+        program_raw = cells[1].get_text(strip=True)
+        date_added = cells[2].get_text(strip=True)
+        decision = cells[3].get_text(strip=True)
+
+        gradcafe_id = ""
+        link = cells[4].find('a')
+        if link and link.get('href'):
+            href = link.get('href')
+            id_match = re.search(r'/result/(\d+)', href)
+            if id_match:
+                gradcafe_id = id_match.group(1)
+
+        if not school or not gradcafe_id:
+            i += 1
+            continue
+
+        program_match = re.search(r'(.+?)(PhD|Masters|Master|Doctorate)', program_raw)
+        program = program_match.group(1).strip() if program_match else program_raw
+        degree = program_match.group(2) if program_match else ""
+
+        details_row = rows[i + 1] if i + 1 < len(rows) else None
+        season = ""
+        status = ""
+        gpa = ""
+        gre_quant = ""
+        gre_verbal = ""
+        gre_aw = ""
+        comment = ""
+
+        if details_row and details_row.get('class') and 'tw-border-none' in details_row.get('class'):
+            details_text = details_row.get_text()
+
+            season_match = re.search(r'(Fall|Spring|Summer|Winter)\s+\d{4}', details_text)
+            season = season_match.group(0) if season_match else ""
+
+            if 'International' in details_text:
+                status = "International"
+            elif 'American' in details_text:
+                status = "American"
+            elif 'Other' in details_text:
+                status = "Other"
+
+            gpa_match = re.search(r'GPA\s+([\d.]+)', details_text)
+            gpa = gpa_match.group(1) if gpa_match else ""
+
+            gre_q_match = re.search(r'GRE\s+(\d+)\s*\(Q\)', details_text)
+            gre_v_match = re.search(r'(\d+)\s*\(V\)', details_text)
+            gre_aw_match = re.search(r'([\d.]+)\s*\(AW\)', details_text)
+
+            if gre_q_match:
+                gre_quant = gre_q_match.group(1)
+            if gre_v_match:
+                gre_verbal = gre_v_match.group(1)
+            if gre_aw_match:
+                gre_aw = gre_aw_match.group(1)
+
+            if not any([gre_quant, gre_verbal, gre_aw]):
+                gre_single_match = re.search(r'GRE\s+(\d+)(?!\s*\()', details_text)
+                if gre_single_match:
+                    gre_quant = gre_single_match.group(1)
+
+        posting = {
+            'gradcafe_id': gradcafe_id,
+            'school': school,
+            'program': program,
+            'degree': degree,
+            'date_added': date_added,
+            'decision': decision,
+            'season': season,
+            'status': status,
+            'gpa': gpa,
+            'gre_quant': gre_quant,
+            'gre_verbal': gre_verbal,
+            'gre_aw': gre_aw,
+            'comment': comment
+        }
+
+        postings.append(posting)
+        i += 2
+
+    return postings
+
+def scrape_gradcafe(num_pages: int = 1) -> List[Dict]:
+    all_postings = []
+
+    for page in range(1, num_pages + 1):
+        print(f"Scraping page {page}/{num_pages}...")
+        postings = scrape_gradcafe_page(page)
+        all_postings.extend(postings)
+
+        if page < num_pages:
+            time.sleep(1)
+
+    return all_postings
+
+def fetch_and_store_new_postings(use_recent_check: bool = True, days_back: int = 7) -> int:
+    postings = scrape_gradcafe_page(1)
+    new_count = 0
+
+    for posting in postings:
+        exists = (
+            posting_exists_recent(posting['gradcafe_id'], days_back)
+            if use_recent_check else
+            posting_exists(posting['gradcafe_id'])
+        )
+
+        if not exists:
+            if add_posting(posting):
+                new_count += 1
+                print(f"New posting: {posting['school']} - {posting['program']} ({posting['decision']})")
+
+    return new_count
+
+def scrape_all_history(start_page: int = 1, end_page: Optional[int] = None, batch_size: int = 50) -> int:
+    if end_page is None:
+        end_page = 1529
+
+    total_added = 0
+    total_duplicates = 0
+
+    page = start_page
+    while page <= end_page:
+        batch_end = min(page + batch_size - 1, end_page)
+        actual_batch_size = batch_end - page + 1
+
+        print(f"\n{'='*80}")
+        print(f"Processing pages {page} to {batch_end} (of {end_page})")
+        print(f"{'='*80}")
+
+        for current_page in range(page, batch_end + 1):
+            postings = scrape_gradcafe_page(current_page)
+
+            for posting in postings:
+                if not posting_exists(posting['gradcafe_id']):
+                    if add_posting(posting):
+                        total_added += 1
+                else:
+                    total_duplicates += 1
+
+            if current_page % 10 == 0:
+                print(f"  Page {current_page}: {total_added} added, {total_duplicates} duplicates so far")
+
+            time.sleep(0.1)
+
+        print(f"Batch complete: {total_added} total added, {total_duplicates} total duplicates")
+        time.sleep(0.3)
+
+        page += batch_size
+
+    return total_added
