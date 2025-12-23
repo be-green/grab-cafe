@@ -43,8 +43,7 @@ class GradCafeBotWithLLM(discord.Client):
                 await message.channel.send("LLM queries are currently disabled.")
                 return
 
-            user_question = message.content.replace(f'<@{self.user.id}>', '').strip()
-            user_question = message.content.replace(f'<@!{self.user.id}>', '').strip()
+            user_question = message.content.replace(f'<@{self.user.id}>', '').replace(f'<@!{self.user.id}>', '').strip()
 
             if not user_question:
                 await message.channel.send("Hi! Ask me anything about economics graduate admissions data. For example: 'What month do most acceptances come out?' or 'Which schools send the most interviews?'")

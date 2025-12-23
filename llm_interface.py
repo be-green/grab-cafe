@@ -3,7 +3,7 @@ from transformers import AutoTokenizer, AutoModelForCausalLM
 import re
 from llm_tools import execute_sql_query, create_plot, get_database_schema
 
-MODEL_NAME = "Qwen/Qwen2.5-1.5B-Instruct"
+MODEL_NAME = "Qwen/Qwen3-1.7B"
 
 class SimpleLLM:
     def __init__(self):
@@ -35,7 +35,7 @@ IMPORTANT NOTES:
 - The 'decision' field format: 'Accepted on [date]', 'Rejected on [date]', 'Interview on [date]', 'Wait listed on [date]', 'Other on [date]'
 - ALWAYS use LIKE when filtering decision (e.g., "decision LIKE 'Accepted%'" not "decision = 'Accepted'")
 - The 'season' field contains academic years like 'F24', 'F23' (F=Fall, S=Spring)
-- GPA is stored as TEXT (e.g., '3.85', '3.50') - use CAST(gpa AS REAL) for numeric operations
+- GPA, GRE scores are stored as REAL (numeric) - can use directly in calculations (e.g., AVG(gpa), gpa > 3.5)
 - Only use the 'postings' table - no other tables exist
 - Always use proper GROUP BY when using aggregate functions
 
@@ -48,7 +48,7 @@ Q: What are the top 5 schools with the most acceptances?
 A: SELECT school, COUNT(*) as acceptance_count FROM postings WHERE decision LIKE 'Accepted%' GROUP BY school ORDER BY acceptance_count DESC LIMIT 5
 
 Q: What is the average GPA of accepted students?
-A: SELECT AVG(CAST(gpa AS REAL)) FROM postings WHERE decision LIKE 'Accepted%' AND gpa != '' AND gpa != 'n/a' AND CAST(gpa AS REAL) < 5.0
+A: SELECT AVG(gpa) FROM postings WHERE decision LIKE 'Accepted%' AND gpa IS NOT NULL
 
 Q: What percentage of applicants are international vs American?
 A: SELECT SUM(CASE WHEN status = 'International' THEN 1 ELSE 0 END) * 100.0 / COUNT(*) as international_pct, SUM(CASE WHEN status = 'American' THEN 1 ELSE 0 END) * 100.0 / COUNT(*) as american_pct FROM postings WHERE status IN ('American', 'International')
