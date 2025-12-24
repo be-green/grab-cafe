@@ -62,28 +62,40 @@ class OpenRouterLLM:
         response = ' '.join(cleaned_lines)
 
         # Detect off-topic responses (not about archive data)
-        # Archive-related keywords that should appear in on-topic responses
-        archive_keywords = [
-            'archive', 'catalog', 'record', 'file', 'hexagon',
-            'school', 'university', 'program', 'phd', 'master',
-            'gpa', 'gre', 'accept', 'reject', 'interview', 'waitlist',
-            'admit', 'decision', 'average', 'median', 'score',
-            'mit', 'harvard', 'stanford', 'yale', 'princeton'
-        ]
-
+        # Check for ACTUAL data mentions (numbers, statistics, specific schools)
         response_lower = response.lower()
-        has_archive_keyword = any(keyword in response_lower for keyword in archive_keywords)
 
-        # If response is long and has NO archive keywords, it's likely off-topic advice
-        if len(response) > 100 and not has_archive_keyword:
+        # Strong archive signals (actual data being reported)
+        has_numbers_with_context = bool(re.search(r'\d+\.?\d*\s*(gpa|gre|score|acceptance)', response_lower))
+        # Use word boundaries to avoid false matches (e.g., "maintain" containing "mit")
+        school_patterns = r'\b(mit|harvard|stanford|yale|princeton|berkeley|chicago|northwestern|columbia|nyu|duke|upenn)\b'
+        has_specific_school = bool(re.search(school_patterns, response_lower))
+        has_archive_metadata = any(word in response_lower for word in [
+            'archive', 'catalog', 'record', 'file', 'hexagon'
+        ])
+        has_data_summary = any(phrase in response_lower for phrase in [
+            'averaged', 'median', 'mean', 'minimum', 'maximum', 'ranged from',
+            'between', 'records show', 'cataloged'
+        ])
+
+        # Strong indicators this IS about archive data
+        is_about_data = has_numbers_with_context or has_specific_school or has_archive_metadata or has_data_summary
+
+        # Advice/general content indicators
+        advice_phrases = [
+            'consider the following', 'you should', 'try to', 'make sure',
+            'important to', 'help you', 'recommend', 'suggest', 'advice',
+            'set boundaries', 'take breaks', 'maintain', 'practice', 'stay organized',
+            'foundation for', 'protect your', 'manage'
+        ]
+        advice_count = sum(1 for phrase in advice_phrases if phrase in response_lower)
+
+        # If long response with lots of advice and NO data, it's off-topic
+        if len(response) > 150 and advice_count >= 3 and not is_about_data:
             return "The archive doesn't contain that."
 
-        # If response mentions typical advice keywords without archive context
-        advice_keywords = ['consider', 'should', 'try to', 'make sure', 'important to', 'help you',
-                          'recommend', 'suggest', 'advice', 'balance', 'manage', 'maintain']
-        advice_count = sum(1 for keyword in advice_keywords if keyword in response_lower)
-
-        if advice_count >= 3 and not has_archive_keyword:
+        # If any advice but no data whatsoever, likely off-topic
+        if advice_count >= 5 and not is_about_data:
             return "The archive doesn't contain that."
 
         return response
@@ -373,7 +385,7 @@ Questions that need DATA from the archive:
 - Trends over time
 - Comparisons between schools
 
-Questions OUTSIDE your scope (respond with "The archive doesn't contain that"):
+Questions OUTSIDE your scope (respond politely, but remember that you are busy and MUST NOT LOSE CONTROL OF THE INDEX):
 - General life advice, mental health, work-life balance
 - Application strategy or "should I apply" questions (unless asking for data comparisons)
 - Anything not related to admissions statistics in the archive
