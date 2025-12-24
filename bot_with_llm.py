@@ -13,20 +13,6 @@ CHECK_INTERVAL_SECONDS = 60
 ENABLE_LLM = 'true'
 POST_LOOKBACK_DAYS = 1
 
-# Stock phrases for when the bot is thinking
-THINKING_PHRASES = [
-    "Consulting the archive...",
-    "Searching through the infinite library of admissions data...",
-    "Let me peer into the database...",
-    "Examining the patterns in the data...",
-    "Running through the records...",
-    "Querying the admissions archive...",
-    "Looking through thousands of applications...",
-    "Checking what the data reveals...",
-    "Traversing the shelves of the Unending Archive...",
-    "One moment while I consult the records...",
-]
-
 class GradCafeBotWithLLM(discord.Client):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -69,9 +55,6 @@ class GradCafeBotWithLLM(discord.Client):
                 await message.channel.send("Hi! Ask me anything about economics graduate admissions data. For example: 'What month do most acceptances come out?' or 'Which schools send the most interviews?'")
                 return
 
-            thinking_phrase = random.choice(THINKING_PHRASES)
-            await message.channel.send(f"*{thinking_phrase}*")
-
             try:
                 recent_messages = []
                 try:
@@ -85,8 +68,14 @@ class GradCafeBotWithLLM(discord.Client):
                 except discord.HTTPException as e:
                     print(f"Failed to fetch recent channel context: {e}")
 
-                response_text, plot_filename = await asyncio.to_thread(query_llm, user_question, recent_messages)
+                # Beatriz triages and responds
+                acknowledgment, response_text, plot_filename = await asyncio.to_thread(query_llm, user_question, recent_messages)
 
+                # Send acknowledgment first if there is one (database queries)
+                if acknowledgment:
+                    await message.channel.send(f"*{acknowledgment}*")
+
+                # Send final response
                 if len(response_text) > 2000:
                     response_text = response_text[:1997] + "..."
 
