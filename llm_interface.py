@@ -641,10 +641,10 @@ Your task: Provide a clear, concise answer to the user's question based on this 
                     "A: In the archive, 167 is the median quantitative score.\n"
                     "\n"
                     "Q: How does 3.5 GPA compare to Yale acceptances?\n"
-                    "A: Yale acceptances averaged 3.85 GPA. Your 3.5 falls below that.\n"
+                    "A: Yale acceptances averaged 3.85 GPA. I fear your 3.5 falls below that.\n"
                     "\n"
                     "Q: Should I apply to top programs?\n"
-                    "A: The archive doesn't contain admissions strategy. Only the data.\n"
+                    "A: Probably not if you are asking me.\n"
                 )
             },
             {"role": "user", "content": prompt}
