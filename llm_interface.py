@@ -1,18 +1,36 @@
+import os
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
 import re
 from llm_tools import execute_sql_query, create_plot, get_database_schema
 
 MODEL_NAME = "Qwen/Qwen3-1.7B"
+USE_4BIT = os.getenv("USE_4BIT", "false").lower() == "true"
 
 class SimpleLLM:
     def __init__(self):
         print("Loading Qwen model...")
         self.tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+        quantization_config = None
+        if USE_4BIT and torch.cuda.is_available():
+            try:
+                from transformers import BitsAndBytesConfig
+                quantization_config = BitsAndBytesConfig(
+                    load_in_4bit=True,
+                    bnb_4bit_compute_dtype=torch.float16
+                )
+                print("Using 4-bit quantization with bitsandbytes.")
+            except Exception as e:
+                print(f"4-bit quantization unavailable: {e}. Falling back to full precision.")
+                quantization_config = None
+        elif USE_4BIT:
+            print("4-bit quantization requires CUDA; falling back to full precision on CPU.")
+
         self.model = AutoModelForCausalLM.from_pretrained(
             MODEL_NAME,
             torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
-            device_map="auto" if torch.cuda.is_available() else None
+            device_map="auto" if torch.cuda.is_available() else None,
+            quantization_config=quantization_config
         )
 
         if not torch.cuda.is_available():
@@ -40,6 +58,7 @@ IMPORTANT NOTES:
 - GPA, GRE scores are stored as REAL (numeric) - can use directly in calculations (e.g., AVG(gpa), gpa > 3.5)
 - Only use the 'postings' table - no other tables exist
 - Always use proper GROUP BY when using aggregate functions
+- Unless the user explicitly asks about Masters/MA/MS, default to PhD results (degree LIKE 'PhD%')
 
 EXAMPLE QUERIES:
 
@@ -152,8 +171,45 @@ SQL:"""
                 result['columns'][1] if len(result['columns']) > 1 else "Count"
             )
 
-        response = self.format_results(user_question, result)
+        response = self.summarize_results(user_question, sql_query, result)
         return response, plot_filename
+
+    def summarize_results(self, user_question: str, sql_query: str, query_result: dict) -> str:
+        """Summarize SQL results using the LLM, with a rule-based fallback."""
+        if query_result.get('error') or not query_result.get('rows'):
+            return self.format_results(user_question, query_result)
+
+        rows = query_result['rows']
+        columns = query_result['columns']
+        row_count = query_result.get('row_count', len(rows))
+        sample_rows = rows[:20]
+
+        prompt = f"""You are Gary, a skilled and friendly SQL engineer based in Minneapolis.
+Summarize the SQL results for the user question. Be concise and factual.
+
+Question: {user_question}
+SQL: {sql_query}
+Columns: {columns}
+Row count: {row_count}
+Rows (first {len(sample_rows)}): {sample_rows}
+
+Provide a short summary and highlight key numbers. If the results are partial, say so."""
+
+        try:
+            inputs = self.tokenizer([prompt], return_tensors="pt").to(self.model.device)
+            with torch.no_grad():
+                outputs = self.model.generate(
+                    **inputs,
+                    max_new_tokens=200,
+                    temperature=0.2,
+                    do_sample=True,
+                    top_p=0.9,
+                    pad_token_id=self.tokenizer.eos_token_id
+                )
+            response = self.tokenizer.decode(outputs[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True)
+            return response.strip() or self.format_results(user_question, query_result)
+        except Exception:
+            return self.format_results(user_question, query_result)
 
     def _extract_sql(self, text: str) -> str:
         """Extract SQL query from model response."""
