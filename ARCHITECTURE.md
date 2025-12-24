@@ -1,8 +1,9 @@
 # GradCafe Bot - Architecture Documentation
 
-**Last Updated:** December 23, 2025
-**Model:** Qwen3-1.7B
+**Last Updated:** December 24, 2025
+**Model:** OpenRouter API (cloud-based LLM)
 **Database:** 30,545+ economics graduate admissions postings
+**Aggregation Tables:** phd (8,241 rows) + masters (1,155 rows)
 
 ---
 
@@ -26,13 +27,14 @@
 A Discord bot that:
 1. Monitors TheGradCafe.com for new economics graduate admissions results
 2. Posts new results to a Discord channel automatically every 60 seconds
-3. Answers natural language queries about admissions data using a local LLM (Gary)
+3. Answers natural language queries about PhD admissions data using OpenRouter LLM API (Gary)
 
 ### History
 - **Original:** R script + Python + CSV storage + cron jobs
 - **Refactored:** Native Python + SQLite + Discord bot + embedded LLM
 - **Migration:** Converted from CSV to SQLite, scraped full GradCafe history (30,545 postings)
-- **LLM Added:** Integrated Qwen3-1.7B for natural language SQL generation
+- **LLM Added:** Initially Qwen3-1.7B local model, migrated to OpenRouter API
+- **Aggregation Tables:** Added auto-refreshing phd/masters tables for simplified LLM queries (Dec 2025)
 
 ---
 
@@ -56,24 +58,25 @@ A Discord bot that:
 │                              │   │   (llm_interface.py)     │
 │  - Beautiful Soup scraping   │   │                          │
 │  - Pagination support        │   │  ┌────────────────────┐  │
-│  - Extract gradcafe_id       │   │  │ Qwen3-1.7B Model   │  │
-│  - Parse posting fields      │   │  │ (SimpleLLM class)  │  │
+│  - Extract gradcafe_id       │   │  │ OpenRouter API     │  │
+│  - Parse posting fields      │   │  │ (cloud-based LLM)  │  │
 │                              │   │  └────────────────────┘  │
 └──────────────────────────────┘   │                          │
-                ↓                  │  1. Generate SQL         │
+                ↓                  │  1. Generate SQL (Gary)  │
 ┌──────────────────────────────┐   │  2. Execute query        │
 │   Database (database.py)     │   │  3. Format results       │
 │                              │←──│  4. Create plot          │
-│  - SQLite connection         │   └──────────────────────────┘
-│  - CRUD operations           │                ↓
-│  - Deduplication             │   ┌──────────────────────────┐
-│  - Discord formatting        │   │   LLM Tools              │
+│  - SQLite connection         │   │  5. Summarize (Beatriz)  │
+│  - CRUD operations           │   └──────────────────────────┘
+│  - Deduplication             │                ↓
+│  - Discord formatting        │   ┌──────────────────────────┐
+│  - Aggregation refresh       │   │   LLM Tools              │
 │                              │   │   (llm_tools.py)         │
 │  gradcafe_messages.db        │   │                          │
-│  (30,545 postings)           │   │  - execute_sql_query()   │
-└──────────────────────────────┘   │  - create_plot()         │
-                                   │  - get_database_schema() │
-                                   └──────────────────────────┘
+│  ├─ postings (30,545)        │   │  - execute_sql_query()   │
+│  ├─ phd (8,241)              │   │  - create_plot()         │
+│  └─ masters (1,155)          │   │  - get_database_schema() │
+└──────────────────────────────┘   └──────────────────────────┘
 ```
 
 ---
@@ -88,8 +91,10 @@ A Discord bot that:
    - Extract gradcafe_id from URL (/result/987590)
    - Check posting_exists(gradcafe_id)
    - If new: add_posting() to database
-4. get_unposted_postings(days_back=1) → fetch recent posts (based on date_added_iso) not yet on Discord
-5. For each unposted:
+4. If new postings found:
+   - refresh_aggregation_tables() → rebuild phd and masters tables
+5. get_unposted_postings(days_back=1) → fetch recent posts (based on date_added_iso) not yet on Discord
+6. For each unposted:
    - format_posting_for_discord()
    - Send to Discord channel
    - mark_posting_as_posted()
@@ -101,15 +106,15 @@ A Discord bot that:
 2. on_message() triggered
 3. Strip mention from message → "What month do acceptances come out?"
 4. query_llm(user_question):
-   a. Load Qwen3-1.7B model (singleton pattern)
+   a. Call OpenRouter API (Gary persona) to generate SQL
    b. generate_sql(user_question):
-      - Create prompt with schema + few-shot examples
-      - Model generates SQL query
+      - Create prompt with schema (phd/masters tables) + few-shot examples
+      - Model generates SQL query (defaults to 'phd' table)
    c. _extract_sql() → parse SQL from response
-   d. execute_sql_query(sql) → run against database
-   e. format_results() → natural language response
-   f. _should_plot() → check if visualization needed
-   g. create_plot() if applicable
+   d. execute_sql_query(sql) → run against aggregation tables
+   e. _should_plot() → check if visualization needed
+   f. create_plot() if applicable
+   g. summarize_results() → call OpenRouter API (Beatriz persona) for natural language summary
 5. Send response text to Discord
 6. Send plot file if generated
 7. Delete plot file
@@ -137,8 +142,12 @@ A Discord bot that:
 **Environment Variables:**
 - `DISCORD_TOKEN`: Bot authentication (required)
 - `DISCORD_CHANNEL_ID`: Channel ID for posting (required)
+- `OPENROUTER_API_KEY`: OpenRouter API key for LLM (required if ENABLE_LLM=true)
+- `OPENROUTER_SQL_MODEL`: Model for SQL generation (default: openai/gpt-4o-mini)
+- `OPENROUTER_SUMMARY_MODEL`: Model for summarization (default: openai/gpt-4o-mini)
 - `CHECK_INTERVAL_SECONDS`: Scraping interval (default: 60)
 - `ENABLE_LLM`: Enable/disable LLM queries (default: true)
+- `POST_LOOKBACK_DAYS`: Days to look back for unposted (default: 1)
 
 **Critical Detail:** Line 46 chains both mention formats:
 ```python
@@ -158,10 +167,11 @@ This handles both regular and nickname mentions.
 - `get_unposted_postings()`: Fetch posts not yet on Discord
 - `mark_posting_as_posted(posting_id)`: Update posted flag
 - `format_posting_for_discord(posting)`: Create Discord message
+- `refresh_aggregation_tables()`: Rebuild phd and masters tables (auto-called on new data)
 
 **Database File:** `gradcafe_messages.db`
 
-**Schema:**
+**Schema - Main Table:**
 ```sql
 CREATE TABLE postings (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -180,14 +190,43 @@ CREATE TABLE postings (
     gre_aw REAL,                            -- Converted to numeric
     comment TEXT,
     scraped_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    posted_to_discord BOOLEAN DEFAULT 0
+    posted_to_discord BOOLEAN DEFAULT 0,
+    result TEXT,                            -- Extracted: Accepted, Rejected, Interview, Waitlist
+    decision_date TEXT                      -- Extracted: "15 Dec", "3 Sep", etc.
 )
 ```
 
-**Critical Design Decision:**
+**Schema - Aggregation Tables (Auto-Refreshed):**
+```sql
+CREATE TABLE phd (
+    school TEXT,
+    program TEXT,
+    decision_date DATE,                     -- ISO format YYYY-MM-DD
+    gpa REAL,
+    gre REAL,                               -- From gre_quant
+    result TEXT                             -- Accepted, Rejected, Interview, Waitlist
+)
+-- Filtered: degree='PhD' AND year(date_added_iso) > 2018
+-- Rows: 8,241
+
+CREATE TABLE masters (
+    school TEXT,
+    program TEXT,
+    decision_date DATE,                     -- ISO format YYYY-MM-DD
+    gpa REAL,
+    gre REAL,                               -- From gre_quant
+    result TEXT                             -- Accepted, Rejected, Interview, Waitlist
+)
+-- Filtered: degree='Masters' AND year(date_added_iso) > 2018
+-- Rows: 1,155
+```
+
+**Critical Design Decisions:**
 - **gradcafe_id is the unique key**, not (school, program, decision, date)
 - This allows multiple students from same school/program/date to be tracked
 - gradcafe_id extracted from result URL: `/result/987590` → `987590`
+- **Aggregation tables** provide simplified schema for LLM queries
+- **decision_date conversion**: "15 Dec" + year(date_added_iso) → "2025-12-15" (ISO DATE)
 
 ---
 
@@ -220,34 +259,46 @@ decision = cells[3].text.strip()  # "Accepted on 15 Dec"
 ---
 
 ### 4. llm_interface.py (LLM Logic)
-**Purpose:** Natural language to SQL using Qwen3-1.7B
+**Purpose:** Natural language to SQL using OpenRouter API
 
-**Key Class:** `SimpleLLM`
+**Key Class:** `OpenRouterLLM`
 
 **Initialization:**
 ```python
-MODEL_NAME = "Qwen/Qwen3-1.7B"
-- Loads model with AutoModelForCausalLM
-- Uses FP16 on GPU, FP32 on CPU
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+OPENROUTER_SQL_MODEL = os.getenv("OPENROUTER_SQL_MODEL", "openai/gpt-4o-mini")
+OPENROUTER_SUMMARY_MODEL = os.getenv("OPENROUTER_SUMMARY_MODEL", "openai/gpt-4o-mini")
+- Cloud-based LLM via OpenRouter API
+- Two-stage processing: SQL generation (Gary) + result summarization (Beatriz)
 - Singleton pattern via get_llm()
 ```
 
 **Core Method:** `generate_sql(user_question)`
 
-**Prompt Structure:**
+**Prompt Structure (Gary - SQL Generation):**
 1. Role definition: "You are Gary, a skilled SQL engineer from Minneapolis"
-2. Database schema with detailed notes
-3. Important reminders (LIKE for decision field, numeric types)
-4. **6 few-shot examples** (critical for performance)
+2. Database schema with phd/masters/postings tables
+3. **CRITICAL RULES:**
+   - ALWAYS use 'phd' table by default
+   - ONLY use 'masters' if explicitly mentioned
+   - NEVER query 'postings' table
+4. **8 few-shot examples** (all using phd table)
 5. User question
 6. Instruction: "Generate ONLY the SQL query"
 
 **Few-Shot Examples Cover:**
-- COUNT queries
+- COUNT queries from phd table
 - GROUP BY with ORDER BY
 - AVG with NULL filtering
-- Percentage calculations
-- Date functions (strftime)
+- Acceptance rate calculations
+- Date functions on decision_date (strftime)
+- School comparisons
+- Monthly trends
+
+**Prompt Structure (Beatriz - Result Summarization):**
+1. Role definition: "You are Beatriz Viterbo, a wise narrator (Borges reference)"
+2. SQL query + results + channel context
+3. Instruction: "Summarize concisely and factually"
 
 **SQL Extraction:** `_extract_sql()`
 - Handles markdown code blocks (```sql)
@@ -346,46 +397,63 @@ python scrape_history.py
 
 ## LLM Integration
 
-### Model: Qwen3-1.7B
-- **Size:** 1.7B parameters (~3.4GB)
-- **Type:** Instruction-tuned (no "-Instruct" suffix in name)
-- **Features:** Thinking/non-thinking mode support
-- **Released:** May 2025 (latest small Qwen model)
+### Model: OpenRouter API (Cloud-Based)
+- **Provider:** OpenRouter (https://openrouter.ai)
+- **Default Model:** GPT-4o-mini (configurable via env vars)
+- **Type:** Cloud API (no local model deployment)
+- **Cost:** Pay-per-use API calls (~$0.15-$0.60 per 1M tokens)
+
+### Two-Stage Architecture
+1. **SQL Generation (Gary):** Natural language → SQL query
+2. **Result Summarization (Beatriz):** SQL results → natural language summary
 
 ### Performance Characteristics
-- **RAM:** ~5GB for model + overhead
-- **CPU Inference:** 5-10 seconds per query (2 vCPUs)
-- **GPU Inference:** <1 second (if available)
-- **First run:** Downloads model (~3.4GB)
+- **RAM:** ~300-500MB (just API client, no model loading)
+- **Latency:** 1-3 seconds per query (network + API processing)
+- **No GPU needed:** Computation happens on OpenRouter's servers
+- **No model download:** Instant startup
 
 ### Prompt Engineering Strategy
 
 **Why Few-Shot Examples Matter:**
-- Small models (1.7B) need concrete examples
-- Shows correct SQL syntax patterns
-- Demonstrates LIKE usage for decision field
-- Prevents schema hallucination (no fake table names)
+- Guides model to use phd/masters tables (not postings)
+- Shows correct date functions on decision_date field
+- Demonstrates schema patterns
+- Prevents querying wrong tables
 
-**Critical Prompt Elements:**
-1. **Role/Persona:** "Gary from Minneapolis" (humanizes, improves tone)
-2. **Schema Notes:** Explain decision format, status values
-3. **LIKE Reminder:** Emphasize `decision LIKE 'Accepted%'` not `= 'Accepted'`
-4. **Examples:** 6 diverse queries covering common patterns
-5. **Output Format:** "Generate ONLY the SQL query" (prevents explanations)
+**Critical Prompt Elements (Gary - SQL):**
+1. **Role/Persona:** "Gary from Minneapolis" (skilled SQL engineer)
+2. **Schema:** phd/masters/postings tables with clear hierarchy
+3. **CRITICAL RULES:**
+   - ALWAYS use 'phd' table by default
+   - ONLY use 'masters' if explicitly mentioned
+   - NEVER query 'postings' table
+4. **Examples:** 8 diverse queries (all using phd table)
+5. **Output Format:** "Generate ONLY the SQL query"
+
+**Critical Prompt Elements (Beatriz - Summary):**
+1. **Role/Persona:** "Beatriz Viterbo" (wise Borges narrator)
+2. **Context:** SQL query + results + recent channel messages
+3. **Instruction:** Summarize concisely and factually
 
 **Common Failure Modes (and how we prevent them):**
-1. Schema hallucination → Provide exact schema, remind "only postings table"
+1. Querying postings table → Explicit prohibition + all examples use phd
 2. Aggregate syntax errors → Show GROUP BY examples
-3. Wrong field values → Document actual values in notes
-4. Verbose output → Explicitly request "ONLY the SQL query"
+3. Wrong date field → Examples use decision_date not date_added_iso
+4. Verbose output → Explicitly request SQL only
 
-### Gary's Personality
+### Personas
+**Gary (SQL Generation)**
 - Name: Gary
 - Location: Minneapolis
 - Role: Skilled and friendly SQL engineer
-- Helps: Graduate school applicants understand admissions data
+- Helps: PhD applicants understand economics admissions data
 
-*Note: The personality doesn't affect SQL generation but makes responses friendlier*
+**Beatriz Viterbo (Summarization)**
+- Name: Beatriz Viterbo
+- Inspiration: Borges narrator (from "The Aleph")
+- Tone: Wise, reflective, hopeful
+- Knowledge: PhD economics graduate admissions
 
 ---
 
@@ -407,19 +475,21 @@ python scrape_history.py
 - Preserves all 30,545 individual submissions
 - No false deduplication
 
-### 3. Why Qwen3-1.7B instead of larger model?
-**Considered:**
-- GPT-3.5 API: Fast but ongoing costs ($$$)
-- Qwen2.5-1.5B: Older, less capable
-- Qwen3-4B: Better but 2x larger (8GB), slower
-- Llama 3 8B: Too large for CPU inference
+### 3. Why OpenRouter API instead of local model?
+**Previously:** Qwen3-1.7B local model (3.4GB, required 8GB RAM)
 
-**Chosen:** Qwen3-1.7B
-- Best balance of size/performance
-- Latest small model (May 2025)
-- Works on 8GB RAM server
-- Acceptable 5-10s response time
-- No API costs
+**Migrated to:** OpenRouter API
+- **No RAM overhead:** ~300-500MB vs 5-8GB for local model
+- **Faster responses:** 1-3s vs 5-10s on CPU
+- **No GPU needed:** Cloud-based inference
+- **Better quality:** Access to GPT-4o-mini and other SOTA models
+- **Flexibility:** Easy model switching via env vars
+- **Cost:** Pay-per-use (~$0.15-$0.60 per 1M tokens, very low for this use case)
+
+**Trade-offs:**
+- Small API costs (minimal for low-volume Discord bot)
+- Requires internet connectivity (acceptable for Discord bot)
+- Dependency on external service (OpenRouter uptime ~99.9%)
 
 ### 4. Why numeric conversion for GPA/GRE?
 **Benefits:**
@@ -455,17 +525,21 @@ python scrape_history.py
 ## Deployment
 
 ### Server Requirements
-**Minimum:**
-- 8GB RAM
-- 2 vCPUs
-- 10GB disk space
+**Minimum (OpenRouter API):**
+- 1GB RAM (300-500MB actual usage)
+- 1 vCPU
+- 2GB disk space (database + code)
 - Python 3.8+
 - Ubuntu 20.04+ or similar
+- Internet connectivity for API calls
 
-**Recommended Providers:**
-- DigitalOcean: $48/month droplet (8GB RAM, 2 vCPUs)
-- Google Cloud: e2-standard-2 instance
-- AWS: t3.large instance
+**Recommended:**
+- DigitalOcean: $6/month droplet (1GB RAM, 1 vCPU) - **Recommended**
+- DigitalOcean: $12/month droplet (2GB RAM, 1 vCPU) - Extra headroom
+- Google Cloud: e2-micro or e2-small instance
+- AWS: t3.micro or t3.small instance
+
+**Note:** Previous deployment required 8GB RAM for local Qwen3-1.7B model. OpenRouter migration reduced requirements by ~90%.
 
 ### Setup Steps
 
@@ -480,9 +554,14 @@ pip install -r requirements.txt
 ```bash
 export DISCORD_TOKEN="your_discord_bot_token"
 export DISCORD_CHANNEL_ID="your_channel_id"
+export OPENROUTER_API_KEY="your_openrouter_api_key"
+export OPENROUTER_SQL_MODEL="openai/gpt-4o-mini"  # Optional
+export OPENROUTER_SUMMARY_MODEL="openai/gpt-4o-mini"  # Optional
 export CHECK_INTERVAL_SECONDS=60
 export ENABLE_LLM=true
 ```
+
+Get OpenRouter API key at: https://openrouter.ai/keys
 
 Or use `.env` file (copy from `.env.example`)
 
@@ -685,9 +764,9 @@ cp gradcafe_messages.db gradcafe_messages_backup_$(date +%Y%m%d).db
 - `pandas>=1.5.0` - Data manipulation (used in plotting)
 
 **LLM:**
-- `torch>=2.0.0` - PyTorch for model inference
-- `transformers>=4.35.0` - Hugging Face model loading
-- `accelerate>=0.24.0` - Optimized model loading
+- `requests>=2.28.0` - HTTP client for OpenRouter API calls
+- (Legacy) `torch>=2.0.0` - PyTorch (no longer needed with OpenRouter)
+- (Legacy) `transformers>=4.35.0` - Hugging Face (no longer needed with OpenRouter)
 
 **Visualization:**
 - `matplotlib>=3.5.0` - Plotting library
@@ -701,13 +780,17 @@ cp gradcafe_messages.db gradcafe_messages_backup_$(date +%Y%m%d).db
 
 **gradcafe_id:** Unique identifier for each posting on GradCafe (extracted from URL)
 
-**Gary:** Persona name for the LLM assistant
+**Gary:** Persona name for SQL generation LLM (Minneapolis-based SQL engineer)
 
-**Qwen3-1.7B:** Latest small instruction-tuned language model from Alibaba Cloud
+**Beatriz Viterbo:** Persona name for result summarization LLM (Borges narrator reference)
+
+**OpenRouter:** API service providing access to multiple LLMs (https://openrouter.ai)
 
 **Few-shot prompting:** Providing examples in the prompt to guide model behavior
 
-**Singleton pattern:** Design pattern ensuring only one LLM instance loads (saves memory)
+**Singleton pattern:** Design pattern ensuring only one LLM instance loads
+
+**Aggregation tables:** Pre-filtered phd/masters tables for simplified LLM queries
 
 **Background task:** Discord.py task that runs on a schedule (every 60s)
 
@@ -725,7 +808,8 @@ cp gradcafe_messages.db gradcafe_messages_backup_$(date +%Y%m%d).db
 - Performance optimizations discovered
 
 **Version History:**
-- v1.0 (Dec 2025): Initial architecture with Qwen3-1.7B, SQLite, full refactor from R/CSV
+- v1.0 (Dec 23, 2025): Initial architecture with Qwen3-1.7B local model, SQLite, full refactor from R/CSV
+- v2.0 (Dec 24, 2025): Migrated to OpenRouter API, added phd/masters aggregation tables, added decision_date DATE field, reduced RAM requirements from 8GB to 1GB
 
 ---
 

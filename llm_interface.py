@@ -75,6 +75,7 @@ FIELD REFERENCE:
 - 'result' contains: 'Accepted', 'Rejected', 'Interview', 'Wait listed', 'Other'
 - 'decision_date' is in ISO format (YYYY-MM-DD) - use for date functions and grouping
 - 'gpa' and 'gre' are REAL (numeric) - use directly in calculations (e.g., AVG(gpa), gpa > 3.5)
+- 'school' and 'program' are TEXT - use LOWER() for case-insensitive matching (e.g., LOWER(school) LIKE LOWER('%MIT%'))
 - Always use proper GROUP BY when using aggregate functions
 
 EXAMPLE QUERIES (note: all use the 'phd' table):
@@ -98,10 +99,16 @@ Q: Show PhD acceptance trends by month
 A: SELECT strftime('%Y-%m', decision_date) as month, COUNT(*) as count FROM phd WHERE result = 'Accepted' AND decision_date IS NOT NULL GROUP BY month ORDER BY month
 
 Q: What's the average GRE for PhD students accepted to MIT?
-A: SELECT AVG(gre) FROM phd WHERE result = 'Accepted' AND school LIKE '%MIT%' AND gre IS NOT NULL
+A: SELECT AVG(gre) FROM phd WHERE result = 'Accepted' AND LOWER(school) LIKE LOWER('%MIT%') AND gre IS NOT NULL
 
 Q: Compare acceptance rates at top schools
 A: SELECT school, SUM(CASE WHEN result = 'Accepted' THEN 1 ELSE 0 END) * 100.0 / COUNT(*) as acceptance_rate FROM phd GROUP BY school HAVING COUNT(*) > 10 ORDER BY acceptance_rate DESC LIMIT 10
+
+Q: When was the most recent acceptance at Stanford?
+A: SELECT school, decision_date FROM phd WHERE LOWER(school) LIKE LOWER('%Stanford%') AND result = 'Accepted' AND decision_date IS NOT NULL ORDER BY decision_date DESC LIMIT 1
+
+Q: What schools sent acceptances in December?
+A: SELECT DISTINCT school FROM phd WHERE result = 'Accepted' AND strftime('%m', decision_date) = '12' ORDER BY school
 
 USER QUESTION: {user_question}
 
