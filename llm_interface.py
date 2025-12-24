@@ -159,7 +159,7 @@ SQL:"""
             OPENROUTER_SQL_MODEL,
             messages,
             temperature=0.2,
-            max_tokens=2000
+            max_tokens=3000
         )
         return response.strip()
 
@@ -227,6 +227,13 @@ YOUR ROLE IN THE WORKFLOW:
 IMPORTANT: Gary is your tool for accessing the archive. He doesn't interact with users.
 You are the interface. You decide what data you need and how to present it.
 
+DATABASE SCHEMA (what data is available in the archive):
+{self.schema}
+
+CRITICAL: Only request data that exists in the schema above. If the user asks for information
+not in the database (e.g., geographic data, rankings, program details not tracked), respond
+directly to tell them that information isn't available in the archive.
+
 Recent channel context (most recent last):
 {recent_context}
 
@@ -269,6 +276,12 @@ Response: REQUEST_DATA: I need the most recent acceptance at Stanford, including
 User: "How do my stats (3.5 GPA, 165 GRE) compare to Yale acceptances?"
 Response: REQUEST_DATA: I need the average, minimum, and maximum GPA and GRE scores for Yale acceptances so I can compare them to the user's stats (3.5 GPA, 165 GRE).
 
+User: "Which schools are near the beach?"
+Response: DIRECT: The archive doesn't contain geographic information about school locations. I only have admissions data (schools, programs, GPAs, GRE scores, decision dates, and results).
+
+User: "What's the acceptance rate for top 10 programs?"
+Response: DIRECT: The archive doesn't track program rankings. I can show you acceptance rates by school if you'd like, but I can't identify which are "top 10" programs.
+
 User: "Thanks!"
 Response: DIRECT: You're welcome! Feel free to ask if you need anything else from the archive.
 
@@ -295,7 +308,7 @@ Response: REQUEST_DATA: I need a count of interview invitations by school, order
             OPENROUTER_SUMMARY_MODEL,
             messages,
             temperature=0.3,
-            max_tokens=300
+            max_tokens=800
         )
 
         response = response.strip()
@@ -442,7 +455,9 @@ Your task: Provide a clear, concise answer to the user's question based on this 
                     sql_content = part[3:].strip() if part.strip().lower().startswith('sql') else part.strip()
                     return sql_content.rstrip(';')
 
-        if text.upper().startswith('SELECT'):
+        # Handle queries starting with SELECT or WITH (for CTEs)
+        text_upper = text.upper()
+        if text_upper.startswith('SELECT') or text_upper.startswith('WITH'):
             lines = text.split('\n')
             sql_lines = []
             for line in lines:
@@ -452,6 +467,15 @@ Your task: Provide a clear, concise answer to the user's question based on this 
                 if ';' in clean_line:
                     break
             return ' '.join(sql_lines).rstrip(';')
+
+        # Look for WITH or SELECT anywhere in the text
+        cte_match = re.search(r'(WITH\s+.+)', text, re.IGNORECASE | re.DOTALL)
+        if cte_match:
+            sql_text = cte_match.group(1).strip()
+            # Remove trailing semicolon and any text after it
+            if ';' in sql_text:
+                sql_text = sql_text.split(';')[0]
+            return sql_text.rstrip(';')
 
         select_match = re.search(r'(SELECT\s+.+?)(?:;|\n\n|$)', text, re.IGNORECASE | re.DOTALL)
         if select_match:

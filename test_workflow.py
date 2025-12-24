@@ -74,14 +74,15 @@ def test_workflow_interactive():
             # Step 3: Gary generates SQL
             print_subsection("Step 2: Gary Generates SQL")
             sql_response = llm.generate_sql(data_request, question, recent_messages)
+            print(f"Gary's raw response:\n{sql_response}")
+
             sql_query = llm._extract_sql(sql_response)
 
             if not sql_query or sql_response.strip().lower() == "none":
-                print(f"Gary's response: {sql_response}")
                 print("\n⚠️  Gary couldn't generate a valid SQL query.")
                 continue
 
-            print(f"Gary's SQL query:\n{sql_query}")
+            print(f"\nExtracted SQL query:\n{sql_query}")
 
             # Step 4: Execute the query
             print_subsection("Step 3: Execute Query")
