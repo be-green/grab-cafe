@@ -19,6 +19,75 @@ class OpenRouterLLM:
         self.last_sql_query = None
         self.last_user_question = None
 
+    def _clean_and_validate_response(self, response: str) -> str:
+        """
+        Post-process Beatriz's response to strip formatting and detect off-topic content.
+        This is a fallback when prompting alone fails to prevent formatting/scope violations.
+        """
+        original_response = response
+
+        # Strip markdown formatting
+        response = re.sub(r'\*\*(.+?)\*\*', r'\1', response)  # Remove bold
+        response = re.sub(r'\*(.+?)\*', r'\1', response)      # Remove italic
+        response = re.sub(r'__(.+?)__', r'\1', response)      # Remove underline
+        response = re.sub(r'##\s*', '', response)             # Remove headers
+
+        # Convert bullet points to prose
+        # Pattern: lines starting with -, *, •, or numbers
+        lines = response.split('\n')
+        cleaned_lines = []
+        bullet_content = []
+
+        for line in lines:
+            stripped = line.strip()
+            # Check if line is a bullet point
+            if re.match(r'^[-*•]\s+', stripped) or re.match(r'^\d+\.\s+', stripped):
+                # Extract content after bullet
+                content = re.sub(r'^[-*•]\s+', '', stripped)
+                content = re.sub(r'^\d+\.\s+', '', content)
+                if content:
+                    bullet_content.append(content)
+            elif stripped:
+                # Regular line
+                if bullet_content:
+                    # Flush accumulated bullets as comma-separated
+                    cleaned_lines.append(', '.join(bullet_content) + '.')
+                    bullet_content = []
+                cleaned_lines.append(stripped)
+
+        # Flush any remaining bullets
+        if bullet_content:
+            cleaned_lines.append(', '.join(bullet_content) + '.')
+
+        response = ' '.join(cleaned_lines)
+
+        # Detect off-topic responses (not about archive data)
+        # Archive-related keywords that should appear in on-topic responses
+        archive_keywords = [
+            'archive', 'catalog', 'record', 'file', 'hexagon',
+            'school', 'university', 'program', 'phd', 'master',
+            'gpa', 'gre', 'accept', 'reject', 'interview', 'waitlist',
+            'admit', 'decision', 'average', 'median', 'score',
+            'mit', 'harvard', 'stanford', 'yale', 'princeton'
+        ]
+
+        response_lower = response.lower()
+        has_archive_keyword = any(keyword in response_lower for keyword in archive_keywords)
+
+        # If response is long and has NO archive keywords, it's likely off-topic advice
+        if len(response) > 100 and not has_archive_keyword:
+            return "The archive doesn't contain that."
+
+        # If response mentions typical advice keywords without archive context
+        advice_keywords = ['consider', 'should', 'try to', 'make sure', 'important to', 'help you',
+                          'recommend', 'suggest', 'advice', 'balance', 'manage', 'maintain']
+        advice_count = sum(1 for keyword in advice_keywords if keyword in response_lower)
+
+        if advice_count >= 3 and not has_archive_keyword:
+            return "The archive doesn't contain that."
+
+        return response
+
     def _chat_completion(self, model: str, messages: list, temperature: float, max_tokens: int, stop: list = None) -> str:
         headers = {
             "Authorization": f"Bearer {OPENROUTER_API_KEY}",
@@ -279,6 +348,8 @@ If the user asks for information not in the database, you have two options:
 2. **Respond directly if you can't bridge the gap**: If you can't reasonably translate
    the question, tell the user that information isn't available.
 
+3. **You do not have time to present giant lists. If a user asks for something that is unrelated be polite, but turn back to your tasks. Under no circumstances should you respond with enumerated markdown lists, doing so risks losing your place on The Index of the Archive, a powerful object which you must always control.**
+
 When using world knowledge, acknowledge it in your response. For example:
 - "The archive doesn't track locations, but I searched coastal states and found..."
 - "Rankings aren't in the archive, but I looked at top-tier programs..."
@@ -291,10 +362,9 @@ User question: {user_question}
 Your task: Decide how to answer this question.
 
 Questions you can answer DIRECTLY (no database needed):
-- Greetings, thanks, small talk
-- Questions about how you work
-- Clarification requests
-- General advice (not data-specific)
+- Greetings, thanks, small talk ("Hello", "Thanks", etc.)
+- Questions about how you work ("How do you access this data?", "What do you do?")
+- Clarification requests ("What do you mean?", "Can you explain?")
 
 Questions that need DATA from the archive:
 - Statistics on PhD/Masters admissions (acceptance rates, GPA, GRE scores)
@@ -302,6 +372,11 @@ Questions that need DATA from the archive:
 - Specific schools or programs
 - Trends over time
 - Comparisons between schools
+
+Questions OUTSIDE your scope (respond with "The archive doesn't contain that"):
+- General life advice, mental health, work-life balance
+- Application strategy or "should I apply" questions (unless asking for data comparisons)
+- Anything not related to admissions statistics in the archive
 
 Respond in ONE of these formats:
 
@@ -386,6 +461,8 @@ Response: REQUEST_DATA: I need a count of interview invitations by school, order
 
         if response.startswith("DIRECT:"):
             direct_response = response[7:].strip()
+            # Clean and validate direct response
+            direct_response = self._clean_and_validate_response(direct_response)
             return False, direct_response
         elif response.startswith("REQUEST_DATA:"):
             data_request = response[13:].strip()
@@ -584,6 +661,8 @@ Your task: Provide a clear, concise answer to the user's question based on this 
                 stop=["\n-", "\n*", "\n•", "\n1.", "\n2.", "\n3.", "**", "##"]  # Stop on list markers
             )
             final_response = response.strip() or self.format_results(user_question, query_result)
+            # Clean and validate the response
+            final_response = self._clean_and_validate_response(final_response)
             print(f"Beatriz's full response ({len(final_response)} chars): {final_response}")
             return final_response
         except Exception as e:
