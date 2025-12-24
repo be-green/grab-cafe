@@ -6,6 +6,16 @@ import json
 
 DB_PATH = os.getenv('DB_PATH', 'gradcafe_messages.db')
 
+def _null_if_empty(value):
+    if value in ("", None):
+        return None
+    return value
+
+def _column_exists(conn: sqlite3.Connection, column_name: str) -> bool:
+    cursor = conn.cursor()
+    cursor.execute("PRAGMA table_info(postings)")
+    return any(row[1] == column_name for row in cursor.fetchall())
+
 @contextmanager
 def get_db_connection():
     conn = sqlite3.connect(DB_PATH)
@@ -31,6 +41,7 @@ def init_database():
                 degree TEXT,
                 decision TEXT NOT NULL,
                 date_added TEXT NOT NULL,
+                date_added_iso TEXT,
                 season TEXT,
                 status TEXT,
                 gpa REAL,
@@ -42,6 +53,8 @@ def init_database():
                 posted_to_discord BOOLEAN DEFAULT 0
             )
         ''')
+        if not _column_exists(conn, "date_added_iso"):
+            cursor.execute('ALTER TABLE postings ADD COLUMN date_added_iso TEXT')
         cursor.execute('''
             CREATE INDEX IF NOT EXISTS idx_gradcafe_id ON postings(gradcafe_id)
         ''')
@@ -86,8 +99,8 @@ def add_posting(posting: Dict) -> bool:
             cursor.execute('''
                 INSERT INTO postings (
                     gradcafe_id, school, program, degree, decision, date_added,
-                    season, status, gpa, gre_quant, gre_verbal, gre_aw, comment
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    date_added_iso, season, status, gpa, gre_quant, gre_verbal, gre_aw, comment
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
                 posting['gradcafe_id'],
                 posting['school'],
@@ -95,12 +108,13 @@ def add_posting(posting: Dict) -> bool:
                 posting.get('degree', ''),
                 posting['decision'],
                 posting['date_added'],
+                _null_if_empty(posting.get('date_added_iso')),
                 posting.get('season', ''),
                 posting.get('status', ''),
-                posting.get('gpa', ''),
-                posting.get('gre_quant', ''),
-                posting.get('gre_verbal', ''),
-                posting.get('gre_aw', ''),
+                _null_if_empty(posting.get('gpa')),
+                _null_if_empty(posting.get('gre_quant')),
+                _null_if_empty(posting.get('gre_verbal')),
+                _null_if_empty(posting.get('gre_aw')),
                 posting.get('comment', '')
             ))
             return True

@@ -2,10 +2,31 @@ import requests
 from bs4 import BeautifulSoup
 import re
 import time
+from datetime import datetime
 from typing import List, Dict, Optional
 from database import posting_exists, posting_exists_recent, add_posting
 
 GRADCAFE_BASE_URL = "https://www.thegradcafe.com/survey/?institution=&program=economics"
+
+def _normalize_date(date_str: str) -> str:
+    if not date_str:
+        return ""
+
+    date_str = date_str.strip()
+    formats = [
+        "%b %d, %Y",
+        "%B %d, %Y",
+        "%m/%d/%Y",
+        "%Y-%m-%d",
+    ]
+    for fmt in formats:
+        try:
+            parsed = datetime.strptime(date_str, fmt)
+            return parsed.strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+
+    return date_str
 
 def scrape_gradcafe_page(page: int = 1) -> List[Dict]:
     url = GRADCAFE_BASE_URL if page == 1 else f"{GRADCAFE_BASE_URL}&page={page}"
@@ -38,6 +59,7 @@ def scrape_gradcafe_page(page: int = 1) -> List[Dict]:
         school = cells[0].get_text(strip=True)
         program_raw = cells[1].get_text(strip=True)
         date_added = cells[2].get_text(strip=True)
+        date_added_iso = _normalize_date(date_added)
         decision = cells[3].get_text(strip=True)
 
         gradcafe_id = ""
@@ -59,10 +81,10 @@ def scrape_gradcafe_page(page: int = 1) -> List[Dict]:
         details_row = rows[i + 1] if i + 1 < len(rows) else None
         season = ""
         status = ""
-        gpa = ""
-        gre_quant = ""
-        gre_verbal = ""
-        gre_aw = ""
+        gpa = None
+        gre_quant = None
+        gre_verbal = None
+        gre_aw = None
         comment = ""
 
         if details_row and details_row.get('class') and 'tw-border-none' in details_row.get('class'):
@@ -110,7 +132,8 @@ def scrape_gradcafe_page(page: int = 1) -> List[Dict]:
             'gre_quant': gre_quant,
             'gre_verbal': gre_verbal,
             'gre_aw': gre_aw,
-            'comment': comment
+            'comment': comment,
+            'date_added_iso': date_added_iso
         }
 
         postings.append(posting)

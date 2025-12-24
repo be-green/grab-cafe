@@ -31,9 +31,11 @@ DATABASE SCHEMA:
 {self.schema}
 
 IMPORTANT NOTES:
+- The database is SQLite; use SQLite-compatible SQL (e.g., strftime for dates)
 - The 'status' field contains: 'American', 'International', 'Other'
 - The 'decision' field format: 'Accepted on [date]', 'Rejected on [date]', 'Interview on [date]', 'Wait listed on [date]', 'Other on [date]'
 - ALWAYS use LIKE when filtering decision (e.g., "decision LIKE 'Accepted%'" not "decision = 'Accepted'")
+- The 'date_added_iso' field stores ISO dates (YYYY-MM-DD); use it for date functions
 - The 'season' field contains academic years like 'F24', 'F23' (F=Fall, S=Spring)
 - GPA, GRE scores are stored as REAL (numeric) - can use directly in calculations (e.g., AVG(gpa), gpa > 3.5)
 - Only use the 'postings' table - no other tables exist
@@ -57,7 +59,7 @@ Q: Which schools send the most interview invitations?
 A: SELECT school, COUNT(*) as interview_count FROM postings WHERE decision LIKE 'Interview%' GROUP BY school ORDER BY interview_count DESC LIMIT 10
 
 Q: What month do most acceptances come out?
-A: SELECT strftime('%m', date_added) as month, COUNT(*) as acceptance_count FROM postings WHERE decision LIKE 'Accepted%' GROUP BY month ORDER BY acceptance_count DESC LIMIT 1
+A: SELECT strftime('%m', date_added_iso) as month, COUNT(*) as acceptance_count FROM postings WHERE decision LIKE 'Accepted%' AND date_added_iso IS NOT NULL GROUP BY month ORDER BY acceptance_count DESC LIMIT 1
 
 USER QUESTION: {user_question}
 

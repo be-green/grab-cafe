@@ -17,7 +17,8 @@ print("-" * 80)
 test_queries = [
     ("Count total postings", "SELECT COUNT(*) as total FROM postings"),
     ("Top 5 schools by acceptances", "SELECT school, COUNT(*) as count FROM postings WHERE decision LIKE '%Accepted%' GROUP BY school ORDER BY count DESC LIMIT 5"),
-    ("Average GPA of accepted students", "SELECT AVG(CAST(gpa AS REAL)) as avg_gpa FROM postings WHERE decision LIKE '%Accepted%' AND gpa != '' AND CAST(gpa AS REAL) <= 4.0"),
+    ("Average GPA of accepted students", "SELECT AVG(gpa) as avg_gpa FROM postings WHERE decision LIKE '%Accepted%' AND gpa IS NOT NULL AND gpa <= 4.0"),
+    ("Acceptance month counts", "SELECT strftime('%m', date_added_iso) as month, COUNT(*) as count FROM postings WHERE decision LIKE '%Accepted%' AND date_added_iso IS NOT NULL GROUP BY month ORDER BY count DESC LIMIT 5"),
     ("International vs American", "SELECT status, COUNT(*) as count FROM postings WHERE status IN ('International', 'American') GROUP BY status"),
 ]
 

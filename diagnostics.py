@@ -60,19 +60,19 @@ print(f"{'✓' if missing_date == 0 else '✗'} Missing Date Added: {missing_dat
 print("\n3. DATA QUALITY CHECKS")
 print("-" * 80)
 
-cursor.execute('SELECT COUNT(*) FROM postings WHERE gpa != ""')
+cursor.execute('SELECT COUNT(*) FROM postings WHERE gpa IS NOT NULL AND gpa != ""')
 with_gpa = cursor.fetchone()[0]
 print(f"✓ Postings with GPA: {with_gpa} ({with_gpa/total*100:.1f}%)")
 
-cursor.execute('SELECT COUNT(*) FROM postings WHERE gre_quant != ""')
+cursor.execute('SELECT COUNT(*) FROM postings WHERE gre_quant IS NOT NULL AND gre_quant != ""')
 with_gre = cursor.fetchone()[0]
 print(f"✓ Postings with GRE: {with_gre} ({with_gre/total*100:.1f}%)")
 
-cursor.execute('SELECT COUNT(*) FROM postings WHERE season != ""')
+cursor.execute('SELECT COUNT(*) FROM postings WHERE season IS NOT NULL AND season != ""')
 with_season = cursor.fetchone()[0]
 print(f"✓ Postings with Season: {with_season} ({with_season/total*100:.1f}%)")
 
-cursor.execute('SELECT COUNT(*) FROM postings WHERE status != ""')
+cursor.execute('SELECT COUNT(*) FROM postings WHERE status IS NOT NULL AND status != ""')
 with_status = cursor.fetchone()[0]
 print(f"✓ Postings with Status: {with_status} ({with_status/total*100:.1f}%)")
 
@@ -139,7 +139,7 @@ print(f"✓ Recent check is {speedup:.1f}x faster")
 print("\n7. DISCORD MESSAGE FORMATTING")
 print("-" * 80)
 
-cursor.execute('SELECT * FROM postings WHERE gpa != "" AND gre_quant != "" LIMIT 1')
+cursor.execute('SELECT * FROM postings WHERE gpa IS NOT NULL AND gpa != "" AND gre_quant IS NOT NULL AND gre_quant != "" LIMIT 1')
 row = cursor.fetchone()
 if row:
     posting_dict = dict(zip([d[0] for d in cursor.description], row))

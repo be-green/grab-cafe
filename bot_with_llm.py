@@ -1,6 +1,7 @@
 import discord
 from discord.ext import tasks
 import os
+import asyncio
 from database import init_database, get_unposted_postings, mark_posting_as_posted, format_posting_for_discord
 from scraper import fetch_and_store_new_postings
 from llm_interface import query_llm
@@ -13,8 +14,11 @@ ENABLE_LLM = os.getenv('ENABLE_LLM', 'true').lower() == 'true'
 class GradCafeBotWithLLM(discord.Client):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.check_gradcafe_task.start()
         self.llm_loaded = False
+
+    async def setup_hook(self):
+        if not self.check_gradcafe_task.is_running():
+            self.check_gradcafe_task.start()
 
     async def on_ready(self):
         print(f'Logged in as {self.user} (ID: {self.user.id})')
@@ -27,7 +31,7 @@ class GradCafeBotWithLLM(discord.Client):
             print("Loading LLM in background...")
             try:
                 from llm_interface import get_llm
-                get_llm()
+                await asyncio.to_thread(get_llm)
                 self.llm_loaded = True
                 print("LLM loaded successfully!")
             except Exception as e:
@@ -52,7 +56,7 @@ class GradCafeBotWithLLM(discord.Client):
             await message.channel.send(f"🤔 Analyzing your question: *{user_question[:100]}...*")
 
             try:
-                response_text, plot_filename = query_llm(user_question)
+                response_text, plot_filename = await asyncio.to_thread(query_llm, user_question)
 
                 if len(response_text) > 2000:
                     response_text = response_text[:1997] + "..."
@@ -73,11 +77,11 @@ class GradCafeBotWithLLM(discord.Client):
     @tasks.loop(seconds=CHECK_INTERVAL_SECONDS)
     async def check_gradcafe_task(self):
         try:
-            new_count = fetch_and_store_new_postings()
+            new_count = await asyncio.to_thread(fetch_and_store_new_postings)
             if new_count > 0:
                 print(f"Found {new_count} new posting(s)")
 
-            unposted = get_unposted_postings()
+            unposted = await asyncio.to_thread(get_unposted_postings)
 
             if unposted:
                 channel = self.get_channel(DISCORD_CHANNEL_ID)
@@ -89,7 +93,7 @@ class GradCafeBotWithLLM(discord.Client):
                     try:
                         message = format_posting_for_discord(posting)
                         await channel.send(message)
-                        mark_posting_as_posted(posting['id'])
+                        await asyncio.to_thread(mark_posting_as_posted, posting['id'])
                         print(f"Posted to Discord: {posting['school']} - {posting['program']}")
                     except discord.HTTPException as e:
                         print(f"Error posting to Discord: {e}")

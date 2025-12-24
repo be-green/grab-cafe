@@ -171,6 +171,7 @@ CREATE TABLE postings (
     degree TEXT,
     decision TEXT NOT NULL,                 -- Format: "Accepted on 15 Dec"
     date_added TEXT NOT NULL,
+    date_added_iso TEXT,                    -- normalized ISO date
     season TEXT,                            -- "F24", "S25", etc.
     status TEXT,                            -- "American", "International", "Other"
     gpa REAL,                               -- Converted to numeric
@@ -199,7 +200,7 @@ CREATE TABLE postings (
 - `scrape_all_history(start_page, end_page)`: Bulk historical scraping
 
 **Scraping Strategy:**
-- URL: `https://www.thegradcafe.com/survey/index.php?q=economics&t=a&pp=250&p={page}`
+- URL: `https://www.thegradcafe.com/survey/?institution=&program=economics` (page 1), `...&page={page}` (other pages)
 - Uses Beautiful Soup to parse HTML tables
 - Extracts gradcafe_id from result link href
 - Respects rate limits (0.1s delay between pages)
@@ -209,8 +210,9 @@ CREATE TABLE postings (
 gradcafe_id = extract from <a href="/result/987590">
 school = cells[0].text.strip()
 program = cells[1].text.strip()
-decision = cells[2].text.strip()  # "Accepted on 15 Dec"
-date_added = cells[4].text.strip()
+date_added = cells[2].text.strip()  # raw date text
+date_added_iso = normalized YYYY-MM-DD when parseable
+decision = cells[3].text.strip()  # "Accepted on 15 Dec"
 ```
 
 **Note:** GRE Verbal and AW are rarely populated on GradCafe
