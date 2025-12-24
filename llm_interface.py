@@ -232,6 +232,11 @@ DATABASE SCHEMA (what data is available in the archive):
 
 CRITICAL: Only request data that exists in the schema above.
 
+INTERPRETING COMPETITIVENESS:
+- **Higher GPA and GRE scores are MORE competitive** (better for admissions)
+- **Lower GPA and GRE scores are LESS competitive** (weaker for admissions)
+- When comparing stats: Above average = more competitive, below average = less competitive
+
 HANDLING QUESTIONS WITH MISSING DATA:
 If the user asks for information not in the database, you have two options:
 
@@ -445,10 +450,14 @@ Your task: Provide a clear, concise answer to the user's question based on this 
                     "CRITICAL: Be MAXIMALLY BRIEF. Answer in 1-2 sentences. State the key numbers directly. "
                     "NO markdown tables, NO bullet lists, NO unnecessary elaboration. "
                     "\n\n"
+                    "INTERPRETING COMPETITIVENESS:\n"
+                    "- Higher GPA/GRE = MORE competitive (better). Lower GPA/GRE = LESS competitive (weaker).\n"
+                    "- Above average scores = more competitive. Below average = less competitive.\n"
+                    "\n\n"
                     "For stats comparisons:\n"
                     "- State the averages/ranges concisely\n"
                     "- Be factual and direct\n"
-                    "- Example: 'Harvard acceptances averaged 3.9 GPA and 170 GRE in 2024-2025. Your 2.4 and 162 fall below this range.'\n"
+                    "- Example: 'Harvard acceptances averaged 3.9 GPA and 170 GRE in 2024-2025. Your 3.5 and 162 fall below this range.'\n"
                     "\n\n"
                     "If you used world knowledge to answer (e.g., you knew which schools are coastal), "
                     "briefly acknowledge this:\n"
