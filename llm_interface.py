@@ -185,7 +185,7 @@ SQL:"""
     def triage_question(self, user_question: str, recent_messages: list):
         """
         Beatriz decides if this needs the database or can be answered directly.
-        Returns: (needs_database: bool, refined_question_or_response: str, acknowledgment: str or None)
+        Returns: (needs_database: bool, direct_response_or_none: str or None, acknowledgment: str or None)
         """
         recent_context = self._format_recent_context(recent_messages)
 
@@ -210,19 +210,12 @@ Non-database questions are:
 - Questions about how YOU work
 - Clarification requests
 - General advice (not data-specific)
-- Follow-ups that you can answer from context
 
-For database questions:
-1. Write a brief acknowledgment (1 sentence, acknowledging what you'll look up)
-2. Rephrase the question to be clear and self-contained for the data engineer
-
-For direct questions:
-1. Just provide your response
+If it's a database question, write a brief acknowledgment (1 sentence).
+If it's a direct question, provide your response.
 
 Respond ONLY in this format:
-DATABASE
-ACK: [brief acknowledgment to user, e.g. "Let me check the records for MIT acceptances..."]
-QUERY: [refined question for the data engineer]
+DATABASE: [brief acknowledgment, e.g. "Let me check the records for MIT acceptances..."]
 
 or
 
@@ -233,14 +226,10 @@ User: "Hello!"
 Response: DIRECT: Hello! I'm Beatriz Viterbo, Head Librarian of the Unending Archive. Ask me anything about PhD economics admissions data.
 
 User: "When was the most recent MIT acceptance?"
-Response: DATABASE
-ACK: Let me consult the archive for MIT's recent acceptances...
-QUERY: What is the most recent acceptance decision date for MIT economics PhD program?
+Response: DATABASE: Let me consult the archive for MIT's recent acceptances...
 
 User: "What about Stanford?" (previous context: discussing MIT)
-Response: DATABASE
-ACK: I'll check Stanford's records for you...
-QUERY: What are the acceptance statistics for Stanford economics PhD program?
+Response: DATABASE: I'll check Stanford's records for you...
 
 User: "Thanks!"
 Response: DIRECT: You're welcome! Feel free to ask if you need anything else from the archive."""
@@ -254,35 +243,23 @@ Response: DIRECT: You're welcome! Feel free to ask if you need anything else fro
             OPENROUTER_SUMMARY_MODEL,
             messages,
             temperature=0.3,
-            max_tokens=250
+            max_tokens=150
         )
 
         response = response.strip()
         print(f"Triage: {response}")
 
-        if response.startswith("DATABASE"):
-            # Extract acknowledgment and query
-            lines = response.split('\n')
-            ack = None
-            query = None
-            for line in lines:
-                if line.startswith("ACK:"):
-                    ack = line[4:].strip()
-                elif line.startswith("QUERY:"):
-                    query = line[6:].strip()
-
-            if not query:
-                query = user_question  # fallback
+        if response.startswith("DATABASE:"):
+            ack = response[9:].strip()
             if not ack:
-                ack = "Let me check the archive for you..."  # fallback
-
-            return True, query, ack
+                ack = "Let me check the archive for you..."
+            return True, None, ack
         elif response.startswith("DIRECT:"):
             direct_response = response[7:].strip()
             return False, direct_response, None
         else:
             # Fallback: assume it's a database question
-            return True, user_question, "Let me check the archive for you..."
+            return True, None, "Let me check the archive for you..."
 
     def query(self, user_question: str, recent_messages: list):
         """
@@ -292,18 +269,16 @@ Response: DIRECT: You're welcome! Feel free to ask if you need anything else fro
         print(f"Question: {user_question}")
 
         # Beatriz decides: database or direct response
-        needs_database, refined_or_response, acknowledgment = self.triage_question(user_question, recent_messages)
+        needs_database, direct_response, acknowledgment = self.triage_question(user_question, recent_messages)
 
         if not needs_database:
             # Beatriz answered directly - no acknowledgment needed
-            return None, refined_or_response, None
+            return None, direct_response, None
 
-        # Database query needed - return acknowledgment so it can be sent first
-        refined_question = refined_or_response
+        # Database query needed - Gary gets the original question
         print(f"Acknowledgment: {acknowledgment}")
-        print(f"Refined question for Gary: {refined_question}")
 
-        sql_response = self.generate_sql(refined_question, recent_messages)
+        sql_response = self.generate_sql(user_question, recent_messages)
         print(f"Generated SQL: {sql_response}")
 
         sql_query = self._extract_sql(sql_response)
@@ -323,7 +298,7 @@ Response: DIRECT: You're welcome! Feel free to ask if you need anything else fro
                 result['columns'][1] if len(result['columns']) > 1 else "Count"
             )
 
-        final_response = self.summarize_results(refined_question, sql_query, result, recent_messages)
+        final_response = self.summarize_results(user_question, sql_query, result, recent_messages)
         return acknowledgment, final_response, plot_filename
 
     def summarize_no_query(self, user_question: str, recent_messages: list) -> str:
