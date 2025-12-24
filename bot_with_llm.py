@@ -5,7 +5,7 @@ import asyncio
 import random
 from database import init_database, get_unposted_postings, mark_posting_as_posted, format_posting_for_discord, refresh_aggregation_tables
 from scraper import fetch_and_store_new_postings
-from llm_interface import query_llm
+from llm_interface import query_llm, get_last_sql_query
 
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
 DISCORD_CHANNEL_ID = int(os.getenv('DISCORD_CHANNEL_ID', '0'))
@@ -53,6 +53,17 @@ class GradCafeBotWithLLM(discord.Client):
 
             if not user_question:
                 await message.channel.send("Hi! Ask me anything about economics graduate admissions data. For example: 'What month do most acceptances come out?' or 'Which schools send the most interviews?'")
+                return
+
+            # Check if user is requesting the last SQL query
+            sql_request_keywords = ['show sql', 'last query', 'what was the query', 'show query', 'sql query', 'show the sql']
+            if any(keyword in user_question.lower() for keyword in sql_request_keywords):
+                sql_query, original_question = await asyncio.to_thread(get_last_sql_query)
+                if sql_query:
+                    response = f"Last query for: \"{original_question}\"\n\n```sql\n{sql_query}\n```"
+                    await message.channel.send(response)
+                else:
+                    await message.channel.send("No SQL query has been run yet, or the last question didn't require a database query.")
                 return
 
             try:

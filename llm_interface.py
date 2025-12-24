@@ -16,6 +16,8 @@ class OpenRouterLLM:
         if not OPENROUTER_API_KEY:
             raise ValueError("OPENROUTER_API_KEY is not set")
         self.schema = get_database_schema()
+        self.last_sql_query = None
+        self.last_user_question = None
 
     def _chat_completion(self, model: str, messages: list, temperature: float, max_tokens: int) -> str:
         headers = {
@@ -365,11 +367,15 @@ Response: REQUEST_DATA: I need a count of interview invitations by school, order
         """
         print(f"Question: {user_question}")
 
+        # Store the question
+        self.last_user_question = user_question
+
         # Step 1: Beatriz reads the question and decides what she needs
         needs_data, response_or_request = self.plan_response(user_question, recent_messages)
 
         if not needs_data:
-            # Beatriz answered directly
+            # Beatriz answered directly - no SQL query
+            self.last_sql_query = None
             return response_or_request, None
 
         # Step 2: Beatriz needs data - send her request to Gary
@@ -379,7 +385,11 @@ Response: REQUEST_DATA: I need a count of interview invitations by school, order
 
         sql_query = self._extract_sql(sql_response)
         if not sql_query or sql_response.strip().lower() == "none":
+            self.last_sql_query = None
             return "I couldn't generate a valid SQL query for that request. Could you rephrase your question?", None
+
+        # Store the SQL query
+        self.last_sql_query = sql_query
 
         # Step 3: Execute Gary's query
         print(f"Executing: {sql_query}")
@@ -560,3 +570,11 @@ def query_llm(question: str, recent_messages: list = None):
     """
     llm = get_llm()
     return llm.query(question, recent_messages or [])
+
+def get_last_sql_query():
+    """
+    Get the most recent SQL query that was executed.
+    Returns: (sql_query, user_question) or (None, None) if no query available
+    """
+    llm = get_llm()
+    return llm.last_sql_query, llm.last_user_question
