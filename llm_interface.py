@@ -50,11 +50,14 @@ class OpenRouterLLM:
         if not recent_messages:
             return "No recent channel context."
         lines = []
-        for item in recent_messages:
+        for i, item in enumerate(recent_messages, 1):
             author = item.get("author", "Unknown")
             content = item.get("content", "").strip()
+            is_bot = item.get("is_bot", False)
             if content:
-                lines.append(f"- {author}: {content}")
+                # Mark bot messages clearly
+                author_label = f"{author} (you)" if is_bot else author
+                lines.append(f"{i}. {author_label}: {content}")
         return "\n".join(lines) if lines else "No recent channel context."
 
     def generate_sql(self, beatriz_request: str, user_question: str, recent_messages: list) -> str:
@@ -238,6 +241,15 @@ INTERPRETING COMPETITIVENESS:
 - **Higher GPA and GRE scores are MORE competitive** (better for admissions)
 - **Lower GPA and GRE scores are LESS competitive** (weaker for admissions)
 - When comparing stats: Above average = more competitive, below average = less competitive
+
+CONTEXT INTERPRETATION:
+The conversation history below shows the full recent discussion. The current user question may
+reference previous messages. Pay close attention to:
+- Follow-up questions: "What about Stanford?" after asking about MIT means apply the same query to Stanford
+- Comparisons: "How does that compare to X?" means compare the previous result to X
+- Pronouns: "it", "that", "those" refer to topics discussed in recent messages
+- Topic continuity: If discussing schools/stats/timing, new questions likely continue that topic
+- Your previous responses: Messages marked "(you)" are your past answers - users may reference them
 
 HANDLING QUESTIONS WITH MISSING DATA:
 If the user asks for information not in the database, you have two options:

@@ -69,13 +69,17 @@ class GradCafeBotWithLLM(discord.Client):
             try:
                 recent_messages = []
                 try:
-                    async for recent_message in message.channel.history(limit=10, before=message, oldest_first=True):
+                    # Fetch more messages for better context (30 instead of 10)
+                    async for recent_message in message.channel.history(limit=30, before=message, oldest_first=False):
                         content = recent_message.content.strip()
                         if content:
                             recent_messages.append({
                                 "author": recent_message.author.display_name,
-                                "content": content
+                                "content": content,
+                                "is_bot": recent_message.author == self.user
                             })
+                    # Reverse to get chronological order (oldest first)
+                    recent_messages.reverse()
                 except discord.HTTPException as e:
                     print(f"Failed to fetch recent channel context: {e}")
 
