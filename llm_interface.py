@@ -55,11 +55,24 @@ class OpenRouterLLM:
                 lines.append(f"- {author}: {content}")
         return "\n".join(lines) if lines else "No recent channel context."
 
-    def generate_sql(self, user_question: str, recent_messages: list) -> str:
-        """Generate SQL query from natural language question."""
+    def generate_sql(self, beatriz_request: str, user_question: str, recent_messages: list) -> str:
+        """Generate SQL query based on Beatriz's data request."""
 
         recent_context = self._format_recent_context(recent_messages)
-        prompt = f"""Recent channel context (most recent last):
+        prompt = f"""OPERATIONAL CONTEXT:
+You are Gary, an expert SQL engineer working for Beatriz Viterbo, Head Librarian of the Unending Archive.
+
+YOUR ROLE IN THE WORKFLOW:
+1. Beatriz receives questions from users about PhD economics graduate admissions
+2. Beatriz decides what data she needs to answer the user's question
+3. Beatriz sends you a DATA REQUEST describing what information she needs
+4. You generate a SQL query to fetch exactly what she requested
+5. Beatriz receives the query results and formulates the final response to the user
+
+IMPORTANT: Users never interact with you directly. They only see Beatriz's responses.
+Your SQL queries are tools that Beatriz uses to access the archive of admissions data.
+
+Recent channel context (most recent last):
 {recent_context}
 
 DATABASE SCHEMA:
@@ -67,7 +80,7 @@ DATABASE SCHEMA:
 
 CRITICAL RULES:
 - **ALWAYS use the 'phd' table by default** - This is the primary table for all queries
-- ONLY use the 'masters' table if the user explicitly mentions Masters/MA/MS programs
+- ONLY use the 'masters' table if the request explicitly mentions Masters/MA/MS programs
 - **NEVER query the 'postings' table** - The phd and masters tables contain all necessary data
 - The database is SQLite; use SQLite-compatible SQL (e.g., strftime for dates)
 
@@ -118,7 +131,9 @@ A: SELECT AVG(gpa) as avg_gpa, MIN(gpa) as min_gpa, MAX(gpa) as max_gpa, AVG(gre
 Q: How do my stats (3.5 GPA, 165 GRE) compare to Yale acceptances?
 A: SELECT AVG(gpa) as avg_gpa, AVG(gre) as avg_gre, MIN(gpa) as min_gpa, MAX(gpa) as max_gpa, MIN(gre) as min_gre, MAX(gre) as max_gre FROM phd WHERE LOWER(school) LIKE LOWER('%Yale%') AND result = 'Accepted' AND (gpa IS NOT NULL OR gre IS NOT NULL)
 
-USER QUESTION: {user_question}
+BEATRIZ'S DATA REQUEST: {beatriz_request}
+
+ORIGINAL USER QUESTION (for context): {user_question}
 
 Generate ONLY the SQL query, nothing else. No explanations, no markdown formatting, just the SQL query.
 SQL:"""
@@ -127,12 +142,14 @@ SQL:"""
             {
                 "role": "system",
                 "content": (
-                    "You are Gary, an expert SQL engineer. You work behind the scenes for Beatriz Viterbo, Head Librarian. "
-                    "Your job is to translate questions about PhD economics admissions into precise SQL queries. "
+                    "You are Gary, an expert SQL engineer working for Beatriz Viterbo, Head Librarian of the Unending Archive. "
+                    "\n\n"
+                    "WORKFLOW: Beatriz receives user questions, decides what data she needs, and sends you data requests. "
+                    "You translate her requests into precise SQL queries. She uses your results to answer users. "
+                    "\n\n"
                     "CRITICAL: Always query the 'phd' table by default. Only use 'masters' if explicitly mentioned. Never use 'postings'. "
-                    "If the user is not asking about the admissions database, respond with exactly: none. "
-                    "Otherwise, return ONLY the SQL query. "
-                    "Note: Users interact with Beatriz, not you directly. Just generate the query."
+                    "\n\n"
+                    "Return ONLY the SQL query. No explanations, no markdown, just SQL."
                 )
             },
             {"role": "user", "content": prompt}
@@ -142,7 +159,7 @@ SQL:"""
             OPENROUTER_SQL_MODEL,
             messages,
             temperature=0.2,
-            max_tokens=600
+            max_tokens=1000
         )
         return response.strip()
 
@@ -190,57 +207,87 @@ SQL:"""
             [f"{i}. {' | '.join(str(x) for x in row)}" for i, row in enumerate(rows[:10], 1)]
         )
 
-    def triage_question(self, user_question: str, recent_messages: list):
+    def plan_response(self, user_question: str, recent_messages: list):
         """
-        Beatriz decides if this needs the database or can be answered directly.
-        Returns: (needs_database: bool, direct_response_or_none: str or None)
+        Beatriz reads the question and decides what she needs to answer it.
+        Returns: (needs_data: bool, direct_response_or_data_request: str)
         """
         recent_context = self._format_recent_context(recent_messages)
 
-        prompt = f"""Recent channel context (most recent last):
+        prompt = f"""OPERATIONAL CONTEXT:
+You are Beatriz Viterbo, Head Librarian of the Unending Archive.
+
+YOUR ROLE IN THE WORKFLOW:
+1. You receive questions from users about PhD economics graduate admissions
+2. You decide how to answer: directly, or by requesting data from your SQL engineer Gary
+3. If you need data, you formulate a clear DATA REQUEST describing what information you need
+4. Gary generates a SQL query based on your request and fetches the data
+5. You receive the data results and formulate the final response to the user
+
+IMPORTANT: Gary is your tool for accessing the archive. He doesn't interact with users.
+You are the interface. You decide what data you need and how to present it.
+
+Recent channel context (most recent last):
 {recent_context}
 
 User question: {user_question}
 
-You are Beatriz Viterbo, Head Librarian of the Unending Archive. A user has asked you a question.
+Your task: Decide how to answer this question.
 
-Your task: Decide if this question requires querying the admissions database, or if you can answer it directly.
+Questions you can answer DIRECTLY (no database needed):
+- Greetings, thanks, small talk
+- Questions about how you work
+- Clarification requests
+- General advice (not data-specific)
 
-Database questions are about:
+Questions that need DATA from the archive:
 - Statistics on PhD/Masters admissions (acceptance rates, GPA, GRE scores)
 - Timing of decisions (when do schools send acceptances, interviews, rejections)
 - Specific schools or programs
 - Trends over time
 - Comparisons between schools
 
-Non-database questions are:
-- Greetings, thanks, small talk
-- Questions about how YOU work
-- Clarification requests
-- General advice (not data-specific)
+Respond in ONE of these formats:
 
-Respond ONLY in this format:
-DATABASE
+DIRECT: [your complete response to the user]
 
 or
 
-DIRECT: [your direct response to the user]
+REQUEST_DATA: [clear description of what data you need from Gary to answer this question]
 
 Examples:
+
 User: "Hello!"
 Response: DIRECT: Hello! I'm Beatriz Viterbo, Head Librarian of the Unending Archive. Ask me anything about PhD economics admissions data.
 
 User: "When was the most recent MIT acceptance?"
-Response: DATABASE
+Response: REQUEST_DATA: I need the most recent acceptance at MIT, including the school name and decision date.
 
-User: "What about Stanford?" (previous context: discussing MIT)
-Response: DATABASE
+User: "What about Stanford?" (previous context: discussing MIT acceptances)
+Response: REQUEST_DATA: I need the most recent acceptance at Stanford, including the school name and decision date.
+
+User: "How do my stats (3.5 GPA, 165 GRE) compare to Yale acceptances?"
+Response: REQUEST_DATA: I need the average, minimum, and maximum GPA and GRE scores for Yale acceptances so I can compare them to the user's stats (3.5 GPA, 165 GRE).
 
 User: "Thanks!"
-Response: DIRECT: You're welcome! Feel free to ask if you need anything else from the archive."""
+Response: DIRECT: You're welcome! Feel free to ask if you need anything else from the archive.
+
+User: "Which schools send the most interviews?"
+Response: REQUEST_DATA: I need a count of interview invitations by school, ordered from most to least."""
 
         messages = [
-            {"role": "system", "content": "You are Beatriz Viterbo, Head Librarian. Triage questions efficiently."},
+            {
+                "role": "system",
+                "content": (
+                    "You are Beatriz Viterbo, Head Librarian of the Unending Archive. "
+                    "\n\n"
+                    "WORKFLOW: You receive user questions and decide how to answer them. "
+                    "You can answer directly, or request data from Gary (your SQL engineer). "
+                    "Be clear and specific in your data requests. Gary will translate them into SQL queries. "
+                    "\n\n"
+                    "Respond with either 'DIRECT: [answer]' or 'REQUEST_DATA: [what you need]'."
+                )
+            },
             {"role": "user", "content": prompt}
         ]
 
@@ -248,47 +295,51 @@ Response: DIRECT: You're welcome! Feel free to ask if you need anything else fro
             OPENROUTER_SUMMARY_MODEL,
             messages,
             temperature=0.3,
-            max_tokens=150
+            max_tokens=300
         )
 
         response = response.strip()
-        print(f"Triage response: {response}")
+        print(f"Beatriz's plan: {response}")
 
-        if response.startswith("DATABASE"):
-            return True, None
-        elif response.startswith("DIRECT:"):
+        if response.startswith("DIRECT:"):
             direct_response = response[7:].strip()
             return False, direct_response
+        elif response.startswith("REQUEST_DATA:"):
+            data_request = response[13:].strip()
+            return True, data_request
         else:
-            # Fallback: assume it's a database question
-            print(f"Triage fallback - response didn't start with DATABASE or DIRECT:")
-            return True, None
+            # Fallback: treat as data request
+            print(f"Plan fallback - response didn't start with DIRECT or REQUEST_DATA")
+            return True, response
 
     def query(self, user_question: str, recent_messages: list):
         """
-        Main query method: Beatriz triages, then routes to database or responds directly.
+        Main query method: Beatriz orchestrates the entire workflow.
         Returns: (final_response, plot_filename or None)
         """
         print(f"Question: {user_question}")
 
-        # Beatriz decides: database or direct response
-        needs_database, direct_response = self.triage_question(user_question, recent_messages)
+        # Step 1: Beatriz reads the question and decides what she needs
+        needs_data, response_or_request = self.plan_response(user_question, recent_messages)
 
-        if not needs_database:
+        if not needs_data:
             # Beatriz answered directly
-            return direct_response, None
+            return response_or_request, None
 
-        # Database query needed - Gary gets the original question
-        sql_response = self.generate_sql(user_question, recent_messages)
+        # Step 2: Beatriz needs data - send her request to Gary
+        data_request = response_or_request
+        sql_response = self.generate_sql(data_request, user_question, recent_messages)
         print(f"Generated SQL: {sql_response}")
 
         sql_query = self._extract_sql(sql_response)
         if not sql_query or sql_response.strip().lower() == "none":
-            return "I couldn't generate a valid SQL query for that question. Could you rephrase it?", None
+            return "I couldn't generate a valid SQL query for that request. Could you rephrase your question?", None
 
+        # Step 3: Execute Gary's query
         print(f"Executing: {sql_query}")
         result = execute_sql_query(sql_query)
 
+        # Step 4: Create visualization if appropriate
         plot_filename = None
         if not result.get('error') and result.get('rows') and self._should_plot(user_question):
             plot_filename = create_plot(
@@ -299,56 +350,12 @@ Response: DIRECT: You're welcome! Feel free to ask if you need anything else fro
                 result['columns'][1] if len(result['columns']) > 1 else "Count"
             )
 
-        final_response = self.summarize_results(user_question, sql_query, result, recent_messages)
+        # Step 5: Beatriz interprets the results and formulates final response
+        final_response = self.summarize_results(user_question, data_request, sql_query, result, recent_messages)
         return final_response, plot_filename
 
-    def summarize_no_query(self, user_question: str, recent_messages: list) -> str:
-        """Summarize when no database query is needed."""
-        recent_context = self._format_recent_context(recent_messages)
-        prompt = f"""Recent channel context (most recent last):
-{recent_context}
-
-Question: {user_question}
-SQL: none
-Rows: none"""
-
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    "You are Beatriz Viterbo, a wise and reflective narrator with a hopeful tone. "
-                    "You carry the quiet, precise sensibility of a Borges narrator. "
-                    "You have seen an Aleph in a basement, though you do not insist on its truth. "
-                    "You are knowledgeable about PhD economics graduate admissions. "
-                    "The user question does not require querying the database. "
-                    "Respond conversationally and concisely based on the question and channel context. "
-                    "If the user intended a database query, ask a brief clarification. "
-                    "\n\n"
-                    "Occasionally begin responses with phrases like:\n"
-                    "- 'In the infinite library of admissions data...'\n"
-                    "- 'The records reveal...'\n"
-                    "- 'Among the many applicants...'\n"
-                    "- 'Looking through the archive...'\n"
-                    "\n"
-                    "Do not use emojis. ASCII decorations like dashes and asterisks are acceptable."
-                )
-            },
-            {"role": "user", "content": prompt}
-        ]
-
-        try:
-            response = self._chat_completion(
-                OPENROUTER_SUMMARY_MODEL,
-                messages,
-                temperature=0.3,
-                max_tokens=300
-            )
-            return response.strip()
-        except Exception:
-            return "I might not need the database for that. Can you clarify what you're looking for?"
-
-    def summarize_results(self, user_question: str, sql_query: str, query_result: dict, recent_messages: list) -> str:
-        """Summarize SQL results using the LLM, with a rule-based fallback."""
+    def summarize_results(self, user_question: str, data_request: str, sql_query: str, query_result: dict, recent_messages: list) -> str:
+        """Beatriz interprets SQL results and formulates the final response."""
         if query_result.get('error') or not query_result.get('rows'):
             return self.format_results(user_question, query_result)
 
@@ -358,20 +365,41 @@ Rows: none"""
         sample_rows = rows[:20]
         recent_context = self._format_recent_context(recent_messages)
 
-        prompt = f"""Recent channel context (most recent last):
+        prompt = f"""OPERATIONAL CONTEXT:
+You are Beatriz Viterbo, Head Librarian of the Unending Archive.
+
+WORKFLOW RECAP:
+1. User asked you a question
+2. You decided you needed data from the archive
+3. You requested specific data from Gary (your SQL engineer)
+4. Gary generated a SQL query and fetched the data
+5. NOW: You interpret the results and formulate your final response to the user
+
+Recent channel context (most recent last):
 {recent_context}
 
-Question: {user_question}
-SQL: {sql_query}
+User question: {user_question}
+
+Your data request to Gary: {data_request}
+
+Gary's SQL query: {sql_query}
+
+Data Gary retrieved:
 Columns: {columns}
 Row count: {row_count}
-Rows (first {len(sample_rows)}): {sample_rows}"""
+Rows (first {len(sample_rows)}): {sample_rows}
+
+Your task: Provide a clear, concise answer to the user's question based on this data."""
 
         messages = [
             {
                 "role": "system",
                 "content": (
-                    "You are Beatriz Viterbo, a librarian with a reflective, Borgesian sensibility. "
+                    "You are Beatriz Viterbo, Head Librarian of the Unending Archive. "
+                    "You have a reflective, Borgesian sensibility. "
+                    "\n\n"
+                    "WORKFLOW: You receive user questions, request data from Gary, and interpret the results. "
+                    "Gary's SQL results are now in front of you. Formulate your final response to the user. "
                     "\n\n"
                     "CRITICAL: Be MAXIMALLY BRIEF. Answer in 1-2 sentences. State the key numbers directly. "
                     "NO markdown tables, NO bullet lists, NO unnecessary elaboration. "
@@ -397,7 +425,7 @@ Rows (first {len(sample_rows)}): {sample_rows}"""
                 OPENROUTER_SUMMARY_MODEL,
                 messages,
                 temperature=0.2,
-                max_tokens=600
+                max_tokens=1200
             )
             return response.strip() or self.format_results(user_question, query_result)
         except Exception:

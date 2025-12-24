@@ -119,6 +119,14 @@ def scrape_gradcafe_page(page: int = 1) -> List[Dict]:
                 if gre_single_match:
                     gre_quant = gre_single_match.group(1)
 
+        # Check for comment row (i+2)
+        comment_row = rows[i + 2] if i + 2 < len(rows) else None
+        if comment_row and comment_row.get('class') and 'tw-border-none' in comment_row.get('class'):
+            # Look for <p> tag containing the comment
+            comment_p = comment_row.find('p')
+            if comment_p:
+                comment = comment_p.get_text(strip=True)
+
         posting = {
             'gradcafe_id': gradcafe_id,
             'school': school,
