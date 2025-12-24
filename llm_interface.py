@@ -238,18 +238,29 @@ If the user asks for information not in the database, you have two options:
 1. **Use your world knowledge to bridge the gap**: If you can translate the question into an
    answerable query using information you know, do so. Be transparent about this.
 
-   Example: User asks "schools near the beach" → You know UC San Diego, UC Santa Barbara,
-   University of Miami, etc. are coastal → Request data about those specific schools
+   IMPORTANT: Request PATTERNS instead of exact school names, since the database has user-reported
+   data with spelling variations. Use wildcards/partial matches.
 
-   Example: User asks about "top 10 programs" → You know which programs are generally
-   considered top-tier → Request data about those schools
+   Example: User asks "schools near the beach"
+   → Think: Coastal states include California, Florida, Hawaii, Washington, etc.
+   → Request: "Schools matching patterns like '%california%', '%florida%', '%hawaii%', '%miami%',
+              '%washington%' - basically coastal locations"
+
+   Example: User asks about "top 10 programs"
+   → Think: Top programs include MIT, Harvard, Stanford, Princeton, Yale, Berkeley, Chicago, etc.
+   → Request: "Schools matching patterns like '%MIT%', '%harvard%', '%stanford%', '%princeton%',
+              '%yale%', '%berkeley%', '%chicago%' - highly-ranked programs"
+
+   Example: User asks about "public universities"
+   → Request: "Schools matching patterns like '%university of%', '%state%', '%UC %',
+              '%SUNY%' - typical public university naming patterns"
 
 2. **Respond directly if you can't bridge the gap**: If you can't reasonably translate
    the question, tell the user that information isn't available.
 
 When using world knowledge, acknowledge it in your response. For example:
-- "The archive doesn't track locations, but I know these schools are coastal: [list]. Here's their data..."
-- "Rankings aren't in the archive, but these schools are generally considered top programs: [list]..."
+- "The archive doesn't track locations, but I searched coastal states and found..."
+- "Rankings aren't in the archive, but I looked at top-tier programs..."
 
 Recent channel context (most recent last):
 {recent_context}
@@ -294,10 +305,10 @@ User: "How do my stats (3.5 GPA, 165 GRE) compare to Yale acceptances?"
 Response: REQUEST_DATA: I need the average, minimum, and maximum GPA and GRE scores for Yale acceptances so I can compare them to the user's stats (3.5 GPA, 165 GRE).
 
 User: "Which schools are near the beach?"
-Response: REQUEST_DATA: I need acceptance data for coastal schools including UC San Diego, UC Santa Barbara, University of Miami, University of Hawaii, and any other schools with "coastal" or beach-adjacent names in the database. Include school name, number of acceptances, and average GPA/GRE for accepted students.
+Response: REQUEST_DATA: I need data for schools in coastal states. Match patterns like '%california%', '%florida%', '%hawaii%', '%miami%', '%washington%', '%oregon%'. For each match, show school name, acceptance stats, and average GPA/GRE for accepted students.
 
 User: "What's the acceptance rate for top 10 programs?"
-Response: REQUEST_DATA: I need acceptance rates for highly-ranked economics programs including MIT, Harvard, Stanford, Princeton, Yale, UC Berkeley, Chicago, Northwestern, Columbia, and NYU. For each school, show total applications and acceptances to calculate acceptance rate.
+Response: REQUEST_DATA: I need acceptance data for top-tier programs. Match patterns like '%MIT%', '%harvard%', '%stanford%', '%princeton%', '%yale%', '%berkeley%', '%chicago%', '%northwestern%', '%columbia%', '%NYU%'. Show school name, total results, acceptances, and calculate acceptance rate.
 
 User: "Thanks!"
 Response: DIRECT: You're welcome! Feel free to ask if you need anything else from the archive.
