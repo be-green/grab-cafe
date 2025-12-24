@@ -88,36 +88,68 @@ def scrape_gradcafe_page(page: int = 1) -> List[Dict]:
         comment = ""
 
         if details_row and details_row.get('class') and 'tw-border-none' in details_row.get('class'):
-            details_text = details_row.get_text()
+            # Find all badge divs containing details
+            badge_divs = details_row.find_all('div', class_='tw-inline-flex')
 
-            season_match = re.search(r'(Fall|Spring|Summer|Winter)\s+\d{4}', details_text)
-            season = season_match.group(0) if season_match else ""
+            for badge in badge_divs:
+                badge_text = badge.get_text(strip=True)
 
-            if 'International' in details_text:
-                status = "International"
-            elif 'American' in details_text:
-                status = "American"
-            elif 'Other' in details_text:
-                status = "Other"
+                # Season
+                if not season:
+                    season_match = re.search(r'(Fall|Spring|Summer|Winter)\s+\d{4}', badge_text)
+                    if season_match:
+                        season = season_match.group(0)
+                        continue
 
-            gpa_match = re.search(r'GPA\s+([\d.]+)', details_text)
-            gpa = gpa_match.group(1) if gpa_match else ""
+                # Status
+                if not status:
+                    if badge_text in ['International', 'American', 'Other']:
+                        status = badge_text
+                        continue
 
-            gre_q_match = re.search(r'GRE\s+(\d+)\s*\(Q\)', details_text)
-            gre_v_match = re.search(r'(\d+)\s*\(V\)', details_text)
-            gre_aw_match = re.search(r'([\d.]+)\s*\(AW\)', details_text)
+                # GPA - match "GPA X.XX" or "GPA XX"
+                if not gpa:
+                    gpa_match = re.search(r'GPA\s+([\d.]+)', badge_text)
+                    if gpa_match:
+                        gpa = gpa_match.group(1)
+                        continue
 
-            if gre_q_match:
-                gre_quant = gre_q_match.group(1)
-            if gre_v_match:
-                gre_verbal = gre_v_match.group(1)
-            if gre_aw_match:
-                gre_aw = gre_aw_match.group(1)
+                # GRE patterns - handle multiple formats
+                if badge_text.startswith('GRE'):
+                    # Format: "GRE V 170" or "GRE AW 6.0"
+                    gre_labeled = re.search(r'GRE\s+(V|AW|Q)\s+([\d.]+)', badge_text)
+                    if gre_labeled:
+                        component = gre_labeled.group(1)
+                        score = gre_labeled.group(2)
+                        if component == 'Q':
+                            gre_quant = score
+                        elif component == 'V':
+                            gre_verbal = score
+                        elif component == 'AW':
+                            gre_aw = score
+                        continue
 
-            if not any([gre_quant, gre_verbal, gre_aw]):
-                gre_single_match = re.search(r'GRE\s+(\d+)(?!\s*\()', details_text)
-                if gre_single_match:
-                    gre_quant = gre_single_match.group(1)
+                    # Format: "GRE 161" (Quant, no label) or "GRE 330" (combined score)
+                    if not gre_quant:
+                        gre_unlabeled = re.search(r'GRE\s+(\d+)', badge_text)
+                        if gre_unlabeled:
+                            gre_quant = gre_unlabeled.group(1)
+                            continue
+
+                # GRE with parentheses: "169 (Q)", "170 (V)", "5.0 (AW)"
+                if '(Q)' in badge_text or '(V)' in badge_text or '(AW)' in badge_text:
+                    gre_component_match = re.search(r'([\d.]+)\s*\(([QVA]+W?)\)', badge_text)
+                    if gre_component_match:
+                        score = gre_component_match.group(1)
+                        component = gre_component_match.group(2)
+
+                        if component == 'Q' and not gre_quant:
+                            gre_quant = score
+                        elif component == 'V' and not gre_verbal:
+                            gre_verbal = score
+                        elif component == 'AW' and not gre_aw:
+                            gre_aw = score
+                        continue
 
         # Check for comment row (i+2)
         comment_row = rows[i + 2] if i + 2 < len(rows) else None

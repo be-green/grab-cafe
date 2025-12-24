@@ -169,34 +169,20 @@ def refresh_aggregation_tables():
             SELECT
                 school,
                 program,
-                CASE
-                    WHEN decision_date IS NOT NULL AND date_added_iso IS NOT NULL
-                    THEN date(
-                        strftime('%Y', date_added_iso) || '-' ||
-                        CASE substr(decision_date, -3)
-                            WHEN 'Jan' THEN '01'
-                            WHEN 'Feb' THEN '02'
-                            WHEN 'Mar' THEN '03'
-                            WHEN 'Apr' THEN '04'
-                            WHEN 'May' THEN '05'
-                            WHEN 'Jun' THEN '06'
-                            WHEN 'Jul' THEN '07'
-                            WHEN 'Aug' THEN '08'
-                            WHEN 'Sep' THEN '09'
-                            WHEN 'Oct' THEN '10'
-                            WHEN 'Nov' THEN '11'
-                            WHEN 'Dec' THEN '12'
-                        END || '-' ||
-                        printf('%02d', CAST(substr(decision_date, 1, instr(decision_date, ' ') - 1) AS INTEGER))
-                    )
-                    ELSE NULL
-                END as decision_date,
+                date_added_iso as decision_date,
                 gpa,
                 gre_quant as gre,
-                result
+                CASE
+                    WHEN decision LIKE '%Accepted%' THEN 'Accepted'
+                    WHEN decision LIKE '%Rejected%' THEN 'Rejected'
+                    WHEN decision LIKE '%Interview%' THEN 'Interview'
+                    WHEN decision LIKE '%Wait%list%' THEN 'Wait listed'
+                    ELSE 'Other'
+                END as result
             FROM postings
             WHERE degree = 'PhD'
-            AND CAST(strftime('%Y', date_added_iso) AS INTEGER) > 2018
+            AND date_added_iso IS NOT NULL
+            AND CAST(strftime('%Y', date_added_iso) AS INTEGER) >= 2018
         ''')
 
         # Create masters table
@@ -206,34 +192,20 @@ def refresh_aggregation_tables():
             SELECT
                 school,
                 program,
-                CASE
-                    WHEN decision_date IS NOT NULL AND date_added_iso IS NOT NULL
-                    THEN date(
-                        strftime('%Y', date_added_iso) || '-' ||
-                        CASE substr(decision_date, -3)
-                            WHEN 'Jan' THEN '01'
-                            WHEN 'Feb' THEN '02'
-                            WHEN 'Mar' THEN '03'
-                            WHEN 'Apr' THEN '04'
-                            WHEN 'May' THEN '05'
-                            WHEN 'Jun' THEN '06'
-                            WHEN 'Jul' THEN '07'
-                            WHEN 'Aug' THEN '08'
-                            WHEN 'Sep' THEN '09'
-                            WHEN 'Oct' THEN '10'
-                            WHEN 'Nov' THEN '11'
-                            WHEN 'Dec' THEN '12'
-                        END || '-' ||
-                        printf('%02d', CAST(substr(decision_date, 1, instr(decision_date, ' ') - 1) AS INTEGER))
-                    )
-                    ELSE NULL
-                END as decision_date,
+                date_added_iso as decision_date,
                 gpa,
                 gre_quant as gre,
-                result
+                CASE
+                    WHEN decision LIKE '%Accepted%' THEN 'Accepted'
+                    WHEN decision LIKE '%Rejected%' THEN 'Rejected'
+                    WHEN decision LIKE '%Interview%' THEN 'Interview'
+                    WHEN decision LIKE '%Wait%list%' THEN 'Wait listed'
+                    ELSE 'Other'
+                END as result
             FROM postings
             WHERE degree = 'Masters'
-            AND CAST(strftime('%Y', date_added_iso) AS INTEGER) > 2018
+            AND date_added_iso IS NOT NULL
+            AND CAST(strftime('%Y', date_added_iso) AS INTEGER) >= 2018
         ''')
 
 def format_posting_for_discord(posting: Dict) -> str:
