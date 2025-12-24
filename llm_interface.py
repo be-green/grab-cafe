@@ -230,9 +230,26 @@ You are the interface. You decide what data you need and how to present it.
 DATABASE SCHEMA (what data is available in the archive):
 {self.schema}
 
-CRITICAL: Only request data that exists in the schema above. If the user asks for information
-not in the database (e.g., geographic data, rankings, program details not tracked), respond
-directly to tell them that information isn't available in the archive.
+CRITICAL: Only request data that exists in the schema above.
+
+HANDLING QUESTIONS WITH MISSING DATA:
+If the user asks for information not in the database, you have two options:
+
+1. **Use your world knowledge to bridge the gap**: If you can translate the question into an
+   answerable query using information you know, do so. Be transparent about this.
+
+   Example: User asks "schools near the beach" → You know UC San Diego, UC Santa Barbara,
+   University of Miami, etc. are coastal → Request data about those specific schools
+
+   Example: User asks about "top 10 programs" → You know which programs are generally
+   considered top-tier → Request data about those schools
+
+2. **Respond directly if you can't bridge the gap**: If you can't reasonably translate
+   the question, tell the user that information isn't available.
+
+When using world knowledge, acknowledge it in your response. For example:
+- "The archive doesn't track locations, but I know these schools are coastal: [list]. Here's their data..."
+- "Rankings aren't in the archive, but these schools are generally considered top programs: [list]..."
 
 Recent channel context (most recent last):
 {recent_context}
@@ -277,10 +294,10 @@ User: "How do my stats (3.5 GPA, 165 GRE) compare to Yale acceptances?"
 Response: REQUEST_DATA: I need the average, minimum, and maximum GPA and GRE scores for Yale acceptances so I can compare them to the user's stats (3.5 GPA, 165 GRE).
 
 User: "Which schools are near the beach?"
-Response: DIRECT: The archive doesn't contain geographic information about school locations. I only have admissions data (schools, programs, GPAs, GRE scores, decision dates, and results).
+Response: REQUEST_DATA: I need acceptance data for coastal schools including UC San Diego, UC Santa Barbara, University of Miami, University of Hawaii, and any other schools with "coastal" or beach-adjacent names in the database. Include school name, number of acceptances, and average GPA/GRE for accepted students.
 
 User: "What's the acceptance rate for top 10 programs?"
-Response: DIRECT: The archive doesn't track program rankings. I can show you acceptance rates by school if you'd like, but I can't identify which are "top 10" programs.
+Response: REQUEST_DATA: I need acceptance rates for highly-ranked economics programs including MIT, Harvard, Stanford, Princeton, Yale, UC Berkeley, Chicago, Northwestern, Columbia, and NYU. For each school, show total applications and acceptances to calculate acceptance rate.
 
 User: "Thanks!"
 Response: DIRECT: You're welcome! Feel free to ask if you need anything else from the archive.
@@ -421,6 +438,11 @@ Your task: Provide a clear, concise answer to the user's question based on this 
                     "- State the averages/ranges concisely\n"
                     "- Be factual and direct\n"
                     "- Example: 'Harvard acceptances averaged 3.9 GPA and 170 GRE in 2024-2025. Your 2.4 and 162 fall below this range.'\n"
+                    "\n\n"
+                    "If you used world knowledge to answer (e.g., you knew which schools are coastal), "
+                    "briefly acknowledge this:\n"
+                    "- 'The archive doesn't track locations, but among coastal schools I know of...'\n"
+                    "- 'While rankings aren't in the archive, these top programs show...'\n"
                     "\n\n"
                     "Occasionally use brief opening phrases like:\n"
                     "- 'The archive shows...'\n"
