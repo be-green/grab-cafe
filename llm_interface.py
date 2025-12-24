@@ -182,22 +182,101 @@ SQL:"""
             [f"{i}. {' | '.join(str(x) for x in row)}" for i, row in enumerate(rows[:10], 1)]
         )
 
+    def triage_question(self, user_question: str, recent_messages: list):
+        """
+        Beatriz decides if this needs the database or can be answered directly.
+        Returns: (needs_database: bool, refined_question: str)
+        """
+        recent_context = self._format_recent_context(recent_messages)
+
+        prompt = f"""Recent channel context (most recent last):
+{recent_context}
+
+User question: {user_question}
+
+You are Beatriz Viterbo, Head Librarian of the Unending Archive. A user has asked you a question.
+
+Your task: Decide if this question requires querying the admissions database, or if you can answer it directly.
+
+Database questions are about:
+- Statistics on PhD/Masters admissions (acceptance rates, GPA, GRE scores)
+- Timing of decisions (when do schools send acceptances, interviews, rejections)
+- Specific schools or programs
+- Trends over time
+- Comparisons between schools
+
+Non-database questions are:
+- Greetings, thanks, small talk
+- Questions about how YOU work
+- Clarification requests
+- General advice (not data-specific)
+- Follow-ups that you can answer from context
+
+If the question needs the database, also rephrase it to be clear and self-contained (incorporating context from recent messages if needed).
+
+Respond ONLY in this format:
+DATABASE: [refined question for the data engineer]
+or
+DIRECT: [your direct response to the user]
+
+Examples:
+User: "Hello!"
+Response: DIRECT: Hello! I'm Beatriz Viterbo, Head Librarian of the Unending Archive. Ask me anything about PhD economics admissions data.
+
+User: "What about MIT?" (previous context: discussion about Stanford acceptances)
+Response: DATABASE: What are the acceptance statistics for MIT economics PhD program?
+
+User: "Thanks!"
+Response: DIRECT: You're welcome! Feel free to ask if you need anything else from the archive."""
+
+        messages = [
+            {"role": "system", "content": "You are Beatriz Viterbo, Head Librarian. Triage questions efficiently."},
+            {"role": "user", "content": prompt}
+        ]
+
+        response = self._chat_completion(
+            OPENROUTER_SUMMARY_MODEL,
+            messages,
+            temperature=0.3,
+            max_tokens=200
+        )
+
+        response = response.strip()
+        print(f"Triage: {response}")
+
+        if response.startswith("DATABASE:"):
+            refined = response[9:].strip()
+            return True, refined
+        elif response.startswith("DIRECT:"):
+            direct_response = response[7:].strip()
+            return False, direct_response
+        else:
+            # Fallback: assume it's a database question
+            return True, user_question
+
     def query(self, user_question: str, recent_messages: list):
         """
-        Main query method: Generate SQL, execute, format results.
+        Main query method: Beatriz triages, then routes to database or responds directly.
         Returns: (text_response, plot_filename or None)
         """
         print(f"Question: {user_question}")
 
-        sql_response = self.generate_sql(user_question, recent_messages)
+        # Beatriz decides: database or direct response
+        needs_database, refined_or_response = self.triage_question(user_question, recent_messages)
+
+        if not needs_database:
+            # Beatriz answered directly
+            return refined_or_response, None
+
+        # Database query needed - ask Gary
+        refined_question = refined_or_response
+        print(f"Refined question for Gary: {refined_question}")
+
+        sql_response = self.generate_sql(refined_question, recent_messages)
         print(f"Generated SQL: {sql_response}")
 
-        if sql_response.strip().lower() == "none":
-            response = self.summarize_no_query(user_question, recent_messages)
-            return response, None
-
         sql_query = self._extract_sql(sql_response)
-        if not sql_query:
+        if not sql_query or sql_response.strip().lower() == "none":
             return "I couldn't generate a valid SQL query for that question. Could you rephrase it?", None
 
         print(f"Executing: {sql_query}")
@@ -213,7 +292,7 @@ SQL:"""
                 result['columns'][1] if len(result['columns']) > 1 else "Count"
             )
 
-        response = self.summarize_results(user_question, sql_query, result, recent_messages)
+        response = self.summarize_results(refined_question, sql_query, result, recent_messages)
         return response, plot_filename
 
     def summarize_no_query(self, user_question: str, recent_messages: list) -> str:
