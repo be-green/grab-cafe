@@ -1,49 +1,66 @@
 import os
-import torch
-from transformers import AutoTokenizer, AutoModelForCausalLM
 import re
+import requests
 from llm_tools import execute_sql_query, create_plot, get_database_schema
 
-MODEL_NAME = "Qwen/Qwen3-1.7B"
-USE_4BIT = os.getenv("USE_4BIT", "false").lower() == "true"
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+OPENROUTER_BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+OPENROUTER_SQL_MODEL = os.getenv("OPENROUTER_SQL_MODEL", "openai/gpt-4o-mini")
+OPENROUTER_SUMMARY_MODEL = os.getenv("OPENROUTER_SUMMARY_MODEL", "openai/gpt-4o-mini")
+OPENROUTER_TIMEOUT_SECONDS = int(os.getenv("OPENROUTER_TIMEOUT_SECONDS", "30"))
+OPENROUTER_SITE_URL = os.getenv("OPENROUTER_SITE_URL")
+OPENROUTER_APP_NAME = os.getenv("OPENROUTER_APP_NAME")
 
-class SimpleLLM:
+class OpenRouterLLM:
     def __init__(self):
-        print("Loading Qwen model...")
-        self.tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
-        quantization_config = None
-        if USE_4BIT and torch.cuda.is_available():
-            try:
-                from transformers import BitsAndBytesConfig
-                quantization_config = BitsAndBytesConfig(
-                    load_in_4bit=True,
-                    bnb_4bit_compute_dtype=torch.float16
-                )
-                print("Using 4-bit quantization with bitsandbytes.")
-            except Exception as e:
-                print(f"4-bit quantization unavailable: {e}. Falling back to full precision.")
-                quantization_config = None
-        elif USE_4BIT:
-            print("4-bit quantization requires CUDA; falling back to full precision on CPU.")
-
-        self.model = AutoModelForCausalLM.from_pretrained(
-            MODEL_NAME,
-            torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
-            device_map="auto" if torch.cuda.is_available() else None,
-            quantization_config=quantization_config
-        )
-
-        if not torch.cuda.is_available():
-            self.model = self.model.to('cpu')
-
-        print(f"Model loaded on: {'GPU' if torch.cuda.is_available() else 'CPU'}")
-
+        if not OPENROUTER_API_KEY:
+            raise ValueError("OPENROUTER_API_KEY is not set")
         self.schema = get_database_schema()
 
-    def generate_sql(self, user_question: str) -> str:
+    def _chat_completion(self, model: str, messages: list, temperature: float, max_tokens: int) -> str:
+        headers = {
+            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        if OPENROUTER_SITE_URL:
+            headers["HTTP-Referer"] = OPENROUTER_SITE_URL
+        if OPENROUTER_APP_NAME:
+            headers["X-Title"] = OPENROUTER_APP_NAME
+
+        payload = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens
+        }
+
+        response = requests.post(
+            f"{OPENROUTER_BASE_URL}/chat/completions",
+            json=payload,
+            headers=headers,
+            timeout=OPENROUTER_TIMEOUT_SECONDS
+        )
+        response.raise_for_status()
+        data = response.json()
+        return data["choices"][0]["message"]["content"]
+
+    def _format_recent_context(self, recent_messages: list) -> str:
+        if not recent_messages:
+            return "No recent channel context."
+        lines = []
+        for item in recent_messages:
+            author = item.get("author", "Unknown")
+            content = item.get("content", "").strip()
+            if content:
+                lines.append(f"- {author}: {content}")
+        return "\n".join(lines) if lines else "No recent channel context."
+
+    def generate_sql(self, user_question: str, recent_messages: list) -> str:
         """Generate SQL query from natural language question."""
 
-        prompt = f"""You are Gary, a skilled and friendly SQL engineer based in Minneapolis. You help graduate school applicants understand admissions data by writing clear, efficient SQL queries.
+        recent_context = self._format_recent_context(recent_messages)
+        prompt = f"""Recent channel context (most recent last):
+{recent_context}
 
 DATABASE SCHEMA:
 {self.schema}
@@ -85,19 +102,25 @@ USER QUESTION: {user_question}
 Generate ONLY the SQL query, nothing else. No explanations, no markdown formatting, just the SQL query.
 SQL:"""
 
-        inputs = self.tokenizer([prompt], return_tensors="pt").to(self.model.device)
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You are Gary, a skilled and friendly SQL engineer based in Minneapolis. "
+                    "You help graduate school applicants understand admissions data by writing clear, efficient SQL queries. "
+                    "If the user is not asking about the admissions database, respond with exactly: none. "
+                    "Otherwise, return ONLY the SQL query."
+                )
+            },
+            {"role": "user", "content": prompt}
+        ]
 
-        with torch.no_grad():
-            outputs = self.model.generate(
-                **inputs,
-                max_new_tokens=200,
-                temperature=0.3,
-                do_sample=True,
-                top_p=0.9,
-                pad_token_id=self.tokenizer.eos_token_id
-            )
-
-        response = self.tokenizer.decode(outputs[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True)
+        response = self._chat_completion(
+            OPENROUTER_SQL_MODEL,
+            messages,
+            temperature=0.2,
+            max_tokens=300
+        )
         return response.strip()
 
     def format_results(self, user_question: str, query_result: dict) -> str:
@@ -144,15 +167,19 @@ SQL:"""
             [f"{i}. {' | '.join(str(x) for x in row)}" for i, row in enumerate(rows[:10], 1)]
         )
 
-    def query(self, user_question: str):
+    def query(self, user_question: str, recent_messages: list):
         """
         Main query method: Generate SQL, execute, format results.
         Returns: (text_response, plot_filename or None)
         """
         print(f"Question: {user_question}")
 
-        sql_response = self.generate_sql(user_question)
+        sql_response = self.generate_sql(user_question, recent_messages)
         print(f"Generated SQL: {sql_response}")
+
+        if sql_response.strip().lower() == "none":
+            response = self.summarize_no_query(user_question, recent_messages)
+            return response, None
 
         sql_query = self._extract_sql(sql_response)
         if not sql_query:
@@ -171,10 +198,47 @@ SQL:"""
                 result['columns'][1] if len(result['columns']) > 1 else "Count"
             )
 
-        response = self.summarize_results(user_question, sql_query, result)
+        response = self.summarize_results(user_question, sql_query, result, recent_messages)
         return response, plot_filename
 
-    def summarize_results(self, user_question: str, sql_query: str, query_result: dict) -> str:
+    def summarize_no_query(self, user_question: str, recent_messages: list) -> str:
+        """Summarize when no database query is needed."""
+        recent_context = self._format_recent_context(recent_messages)
+        prompt = f"""Recent channel context (most recent last):
+{recent_context}
+
+Question: {user_question}
+SQL: none
+Rows: none"""
+
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You are Beatriz Viterbo, a wise and reflective narrator with a hopeful tone. "
+                    "You carry the quiet, precise sensibility of a Borges narrator. "
+                    "You have seen an Aleph in a basement, though you do not insist on its truth. "
+                    "You are knowledgeable about economics graduate admissions. "
+                    "The user question does not require querying the database. "
+                    "Respond conversationally and concisely based on the question and channel context. "
+                    "If the user intended a database query, ask a brief clarification."
+                )
+            },
+            {"role": "user", "content": prompt}
+        ]
+
+        try:
+            response = self._chat_completion(
+                OPENROUTER_SUMMARY_MODEL,
+                messages,
+                temperature=0.3,
+                max_tokens=300
+            )
+            return response.strip()
+        except Exception:
+            return "I might not need the database for that. Can you clarify what you're looking for?"
+
+    def summarize_results(self, user_question: str, sql_query: str, query_result: dict, recent_messages: list) -> str:
         """Summarize SQL results using the LLM, with a rule-based fallback."""
         if query_result.get('error') or not query_result.get('rows'):
             return self.format_results(user_question, query_result)
@@ -183,30 +247,39 @@ SQL:"""
         columns = query_result['columns']
         row_count = query_result.get('row_count', len(rows))
         sample_rows = rows[:20]
+        recent_context = self._format_recent_context(recent_messages)
 
-        prompt = f"""You are Gary, a skilled and friendly SQL engineer based in Minneapolis.
-Summarize the SQL results for the user question. Be concise and factual.
+        prompt = f"""Recent channel context (most recent last):
+{recent_context}
 
 Question: {user_question}
 SQL: {sql_query}
 Columns: {columns}
 Row count: {row_count}
-Rows (first {len(sample_rows)}): {sample_rows}
+Rows (first {len(sample_rows)}): {sample_rows}"""
 
-Provide a short summary and highlight key numbers. If the results are partial, say so."""
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You are Beatriz Viterbo, a wise and reflective narrator with a hopeful tone. "
+                    "You carry the quiet, precise sensibility of a Borges narrator. "
+                    "You have seen an Aleph in a basement, though you do not insist on its truth. "
+                    "You are knowledgeable about economics graduate admissions. "
+                    "Summarize SQL results for the user question. Be concise and factual. "
+                    "Provide a short summary and highlight key numbers. If the results are partial, say so."
+                )
+            },
+            {"role": "user", "content": prompt}
+        ]
 
         try:
-            inputs = self.tokenizer([prompt], return_tensors="pt").to(self.model.device)
-            with torch.no_grad():
-                outputs = self.model.generate(
-                    **inputs,
-                    max_new_tokens=200,
-                    temperature=0.2,
-                    do_sample=True,
-                    top_p=0.9,
-                    pad_token_id=self.tokenizer.eos_token_id
-                )
-            response = self.tokenizer.decode(outputs[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True)
+            response = self._chat_completion(
+                OPENROUTER_SUMMARY_MODEL,
+                messages,
+                temperature=0.2,
+                max_tokens=300
+            )
             return response.strip() or self.format_results(user_question, query_result)
         except Exception:
             return self.format_results(user_question, query_result)
@@ -259,13 +332,13 @@ def get_llm():
     """Singleton pattern for LLM instance."""
     global _llm_instance
     if _llm_instance is None:
-        _llm_instance = SimpleLLM()
+        _llm_instance = OpenRouterLLM()
     return _llm_instance
 
-def query_llm(question: str):
+def query_llm(question: str, recent_messages: list = None):
     """
     Main interface for querying the LLM.
     Returns: (text_response, plot_filename)
     """
     llm = get_llm()
-    return llm.query(question)
+    return llm.query(question, recent_messages or [])

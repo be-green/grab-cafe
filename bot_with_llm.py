@@ -29,12 +29,12 @@ class GradCafeBotWithLLM(discord.Client):
         print('------')
 
         if ENABLE_LLM and not self.llm_loaded:
-            print("Loading LLM in background...")
+            print("Initializing LLM client...")
             try:
                 from llm_interface import get_llm
                 await asyncio.to_thread(get_llm)
                 self.llm_loaded = True
-                print("LLM loaded successfully!")
+                print("LLM ready!")
             except Exception as e:
                 print(f"Failed to load LLM: {e}")
                 print("LLM queries will be disabled.")
@@ -57,7 +57,19 @@ class GradCafeBotWithLLM(discord.Client):
             await message.channel.send(f"🤔 Analyzing your question: *{user_question[:100]}...*")
 
             try:
-                response_text, plot_filename = await asyncio.to_thread(query_llm, user_question)
+                recent_messages = []
+                try:
+                    async for recent_message in message.channel.history(limit=10, before=message, oldest_first=True):
+                        content = recent_message.content.strip()
+                        if content:
+                            recent_messages.append({
+                                "author": recent_message.author.display_name,
+                                "content": content
+                            })
+                except discord.HTTPException as e:
+                    print(f"Failed to fetch recent channel context: {e}")
+
+                response_text, plot_filename = await asyncio.to_thread(query_llm, user_question, recent_messages)
 
                 if len(response_text) > 2000:
                     response_text = response_text[:1997] + "..."

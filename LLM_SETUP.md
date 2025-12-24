@@ -2,7 +2,7 @@
 
 ## Overview
 
-The bot now has an interactive LLM-powered query system that can answer questions about the graduate admissions database using Qwen2.5-0.5B-Instruct.
+The bot now has an interactive LLM-powered query system that can answer questions about the graduate admissions database using the OpenRouter API.
 
 ## Features
 
@@ -20,8 +20,6 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Note: First run will download the Qwen model (~600MB). This happens automatically.
-
 ### 2. Environment Variables
 
 Add to your `.env` file:
@@ -33,6 +31,13 @@ DISCORD_CHANNEL_ID=your_channel_id
 
 # Optional - LLM features
 ENABLE_LLM=true  # Set to 'false' to disable LLM queries
+
+# OpenRouter (required when ENABLE_LLM=true)
+OPENROUTER_API_KEY=your_openrouter_key
+
+# Optional model selection
+OPENROUTER_SQL_MODEL=openai/gpt-4o-mini
+OPENROUTER_SUMMARY_MODEL=openai/gpt-4o-mini
 ```
 
 ### 3. Run the Enhanced Bot
@@ -97,36 +102,24 @@ Tag the bot with a question:
 ## Performance
 
 - **CPU**: Works fine on CPU-only servers
-- **GPU**: Faster inference if CUDA available
-- **Memory**: ~1.5GB RAM for model
-- **Response time**: 2-10 seconds per query
+- **Memory**: Low local memory usage
+- **Response time**: Depends on OpenRouter latency
 
 ## Files
 
 - `bot_with_llm.py` - Enhanced Discord bot
-- `llm_interface.py` - Qwen model integration
+- `llm_interface.py` - OpenRouter integration
 - `llm_tools.py` - Database query and plotting tools
 - `test_llm.py` - Test suite for LLM features
 
 ## Troubleshooting
 
-**Model won't download:**
-```bash
-# Manually download
-python -c "from transformers import AutoModelForCausalLM; AutoModelForCausalLM.from_pretrained('Qwen/Qwen2.5-0.5B-Instruct')"
-```
-
-**Out of memory:**
-- Use smaller model or reduce batch size
-- Ensure bot has sufficient RAM (~2GB recommended)
-
 **Slow responses:**
-- Normal on CPU (5-10s)
-- Consider GPU for faster inference
+- Depends on OpenRouter model choice and latency
 
 **LLM not responding:**
 - Check `ENABLE_LLM=true` in environment
-- Verify model downloaded successfully
+- Verify `OPENROUTER_API_KEY` is set
 - Check bot logs for errors
 
 ## Fallback Mode
