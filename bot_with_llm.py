@@ -10,6 +10,7 @@ DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
 DISCORD_CHANNEL_ID = int(os.getenv('DISCORD_CHANNEL_ID', '0'))
 CHECK_INTERVAL_SECONDS = int(os.getenv('CHECK_INTERVAL_SECONDS', '60'))
 ENABLE_LLM = os.getenv('ENABLE_LLM', 'true').lower() == 'true'
+POST_LOOKBACK_DAYS = int(os.getenv('POST_LOOKBACK_DAYS', '1'))
 
 class GradCafeBotWithLLM(discord.Client):
     def __init__(self, *args, **kwargs):
@@ -81,7 +82,7 @@ class GradCafeBotWithLLM(discord.Client):
             if new_count > 0:
                 print(f"Found {new_count} new posting(s)")
 
-            unposted = await asyncio.to_thread(get_unposted_postings)
+            unposted = await asyncio.to_thread(get_unposted_postings, POST_LOOKBACK_DAYS)
 
             if unposted:
                 channel = self.get_channel(DISCORD_CHANNEL_ID)

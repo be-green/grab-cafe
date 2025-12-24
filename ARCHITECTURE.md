@@ -88,7 +88,7 @@ A Discord bot that:
    - Extract gradcafe_id from URL (/result/987590)
    - Check posting_exists(gradcafe_id)
    - If new: add_posting() to database
-4. get_unposted_postings() → fetch new posts not yet on Discord
+4. get_unposted_postings(days_back=1) → fetch recent posts (based on date_added_iso) not yet on Discord
 5. For each unposted:
    - format_posting_for_discord()
    - Send to Discord channel

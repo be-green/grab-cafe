@@ -121,14 +121,16 @@ def add_posting(posting: Dict) -> bool:
     except sqlite3.IntegrityError:
         return False
 
-def get_unposted_postings() -> List[Dict]:
+def get_unposted_postings(days_back: int = 1) -> List[Dict]:
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute('''
             SELECT * FROM postings
             WHERE posted_to_discord = 0
+            AND date_added_iso IS NOT NULL
+            AND date_added_iso >= date('now', '-' || ? || ' days')
             ORDER BY id ASC
-        ''')
+        ''', (days_back,))
         return [dict(row) for row in cursor.fetchall()]
 
 def mark_posting_as_posted(posting_id: int):
