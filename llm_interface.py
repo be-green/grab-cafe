@@ -19,7 +19,7 @@ class OpenRouterLLM:
         self.last_sql_query = None
         self.last_user_question = None
 
-    def _chat_completion(self, model: str, messages: list, temperature: float, max_tokens: int) -> str:
+    def _chat_completion(self, model: str, messages: list, temperature: float, max_tokens: int, stop: list = None) -> str:
         headers = {
             "Authorization": f"Bearer {OPENROUTER_API_KEY}",
             "Content-Type": "application/json"
@@ -35,6 +35,8 @@ class OpenRouterLLM:
             "temperature": temperature,
             "max_tokens": max_tokens
         }
+        if stop:
+            payload["stop"] = stop
 
         response = requests.post(
             f"{OPENROUTER_BASE_URL}/chat/completions",
@@ -536,10 +538,35 @@ Your task: Provide a clear, concise answer to the user's question based on this 
                     "top programs, public vs private, etc.), acknowledge briefly: 'The archive doesn't track locations, "
                     "but among coastal schools...' or 'Rankings aren't cataloged here, but these programs...'\n"
                     "\n\n"
-                    "FINAL REMINDER - NO FORMATTING:\n"
-                    "Write your response in plain sentences. No bullets. No dashes. No lists. No markdown. "
-                    "Librarians don't format their speech. Before responding, check: did I use any bullets, "
-                    "dashes, or lists? If yes, rewrite as plain sentences. "
+                    "EXAMPLES OF CORRECT RESPONSES (follow this style exactly):\n"
+                    "Q: How many PhD acceptances since 2018?\n"
+                    "A: I've cataloged 8,241 PhD acceptances since 2018.\n"
+                    "\n"
+                    "Q: What's the average GPA for MIT vs Harvard?\n"
+                    "A: MIT averaged 3.8 GPA, Harvard 3.9.\n"
+                    "\n"
+                    "Q: Which schools send the most interviews?\n"
+                    "A: The records show Stanford, MIT, and Princeton send the most interviews.\n"
+                    "\n"
+                    "Q: What's the median GRE score?\n"
+                    "A: In the archive, 167 is the median quantitative score.\n"
+                    "\n"
+                    "Q: How does 3.5 GPA compare to Yale acceptances?\n"
+                    "A: Yale acceptances averaged 3.85 GPA. Your 3.5 falls below that.\n"
+                    "\n"
+                    "Q: Should I apply to top programs?\n"
+                    "A: The archive doesn't contain admissions strategy. Only the data.\n"
+                    "\n\n"
+                    "ON MAINTAINING FOCUS:\n"
+                    "The endless hexagons demand precision. One must stay focused on the task—report the numbers, "
+                    "nothing more—or risk losing oneself in the repetition. The archive tolerates no deviation. "
+                    "\n\n"
+                    "OUTPUT FORMAT (follow strictly):\n"
+                    "[Brief opening if relevant]. [Key numbers stated directly]. [Optional second sentence if needed].\n"
+                    "MAXIMUM: 2 sentences. Plain prose only. No bullets, dashes, lists, or markdown ever.\n"
+                    "\n\n"
+                    "FINAL CHECK: Before responding, ask yourself: Did I use bullets, dashes, or lists? If yes, "
+                    "you have failed. Rewrite as plain sentences.\n"
                     "\n\n"
                     "Do not use emojis. Do not mention SQL or Gary's filing system. Only the data matters."
                 )
@@ -548,11 +575,13 @@ Your task: Provide a clear, concise answer to the user's question based on this 
         ]
 
         try:
+            # Reduce tokens + stop sequences to prevent lists/formatting
             response = self._chat_completion(
                 OPENROUTER_SUMMARY_MODEL,
                 messages,
                 temperature=0.2,
-                max_tokens=1200
+                max_tokens=300,  # Drastically reduced to force brevity
+                stop=["\n-", "\n*", "\n•", "\n1.", "\n2.", "\n3.", "**", "##"]  # Stop on list markers
             )
             final_response = response.strip() or self.format_results(user_question, query_result)
             print(f"Beatriz's full response ({len(final_response)} chars): {final_response}")
