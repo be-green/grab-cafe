@@ -68,8 +68,7 @@ DATABASE SCHEMA:
 IMPORTANT NOTES:
 - The database is SQLite; use SQLite-compatible SQL (e.g., strftime for dates)
 - The 'status' field contains: 'American', 'International', 'Other'
-- The 'decision' field format: 'Accepted on [date]', 'Rejected on [date]', 'Interview on [date]', 'Wait listed on [date]', 'Other on [date]'
-- ALWAYS use LIKE when filtering decision (e.g., "decision LIKE 'Accepted%'" not "decision = 'Accepted'")
+- The 'result' field contains: 'Accepted', 'Rejected', 'Interview', 'Wait listed', 'Other'
 - The 'date_added_iso' field stores ISO dates (YYYY-MM-DD); use it for date functions
 - The 'season' field contains academic years like 'F24', 'F23' (F=Fall, S=Spring)
 - GPA, GRE scores are stored as REAL (numeric) - can use directly in calculations (e.g., AVG(gpa), gpa > 3.5)
@@ -83,19 +82,19 @@ Q: How many total results are in the database?
 A: SELECT COUNT(*) FROM postings
 
 Q: What are the top 5 schools with the most acceptances?
-A: SELECT school, COUNT(*) as acceptance_count FROM postings WHERE decision LIKE 'Accepted%' GROUP BY school ORDER BY acceptance_count DESC LIMIT 5
+A: SELECT school, COUNT(*) as acceptance_count FROM postings WHERE result = 'Accepted' GROUP BY school ORDER BY acceptance_count DESC LIMIT 5
 
 Q: What is the average GPA of accepted students?
-A: SELECT AVG(gpa) FROM postings WHERE decision LIKE 'Accepted%' AND gpa IS NOT NULL
+A: SELECT AVG(gpa) FROM postings WHERE result = 'Accepted' AND gpa IS NOT NULL
 
 Q: What percentage of applicants are international vs American?
 A: SELECT SUM(CASE WHEN status = 'International' THEN 1 ELSE 0 END) * 100.0 / COUNT(*) as international_pct, SUM(CASE WHEN status = 'American' THEN 1 ELSE 0 END) * 100.0 / COUNT(*) as american_pct FROM postings WHERE status IN ('American', 'International')
 
 Q: Which schools send the most interview invitations?
-A: SELECT school, COUNT(*) as interview_count FROM postings WHERE decision LIKE 'Interview%' GROUP BY school ORDER BY interview_count DESC LIMIT 10
+A: SELECT school, COUNT(*) as interview_count FROM postings WHERE result = 'Interview' GROUP BY school ORDER BY interview_count DESC LIMIT 10
 
 Q: What month do most acceptances come out?
-A: SELECT strftime('%m', date_added_iso) as month, COUNT(*) as acceptance_count FROM postings WHERE decision LIKE 'Accepted%' AND date_added_iso IS NOT NULL GROUP BY month ORDER BY acceptance_count DESC LIMIT 1
+A: SELECT strftime('%m', date_added_iso) as month, COUNT(*) as acceptance_count FROM postings WHERE result = 'Accepted' AND date_added_iso IS NOT NULL GROUP BY month ORDER BY acceptance_count DESC LIMIT 1
 
 USER QUESTION: {user_question}
 
