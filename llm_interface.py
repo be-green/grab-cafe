@@ -142,7 +142,7 @@ SQL:"""
             OPENROUTER_SQL_MODEL,
             messages,
             temperature=0.2,
-            max_tokens=300
+            max_tokens=600
         )
         return response.strip()
 
@@ -193,7 +193,7 @@ SQL:"""
     def triage_question(self, user_question: str, recent_messages: list):
         """
         Beatriz decides if this needs the database or can be answered directly.
-        Returns: (needs_database: bool, direct_response_or_none: str or None, acknowledgment: str or None)
+        Returns: (needs_database: bool, direct_response_or_none: str or None)
         """
         recent_context = self._format_recent_context(recent_messages)
 
@@ -219,11 +219,8 @@ Non-database questions are:
 - Clarification requests
 - General advice (not data-specific)
 
-If it's a database question, write a brief acknowledgment (1 sentence).
-If it's a direct question, provide your response.
-
 Respond ONLY in this format:
-DATABASE: [brief acknowledgment, e.g. "Let me check the records for MIT acceptances..."]
+DATABASE
 
 or
 
@@ -234,10 +231,10 @@ User: "Hello!"
 Response: DIRECT: Hello! I'm Beatriz Viterbo, Head Librarian of the Unending Archive. Ask me anything about PhD economics admissions data.
 
 User: "When was the most recent MIT acceptance?"
-Response: DATABASE: Let me consult the archive for MIT's recent acceptances...
+Response: DATABASE
 
 User: "What about Stanford?" (previous context: discussing MIT)
-Response: DATABASE: I'll check Stanford's records for you...
+Response: DATABASE
 
 User: "Thanks!"
 Response: DIRECT: You're welcome! Feel free to ask if you need anything else from the archive."""
@@ -255,43 +252,39 @@ Response: DIRECT: You're welcome! Feel free to ask if you need anything else fro
         )
 
         response = response.strip()
-        print(f"Triage: {response}")
+        print(f"Triage response: {response}")
 
-        if response.startswith("DATABASE:"):
-            ack = response[9:].strip()
-            if not ack:
-                ack = "Let me check the archive for you..."
-            return True, None, ack
+        if response.startswith("DATABASE"):
+            return True, None
         elif response.startswith("DIRECT:"):
             direct_response = response[7:].strip()
-            return False, direct_response, None
+            return False, direct_response
         else:
             # Fallback: assume it's a database question
-            return True, None, "Let me check the archive for you..."
+            print(f"Triage fallback - response didn't start with DATABASE or DIRECT:")
+            return True, None
 
     def query(self, user_question: str, recent_messages: list):
         """
         Main query method: Beatriz triages, then routes to database or responds directly.
-        Returns: (acknowledgment or None, final_response, plot_filename or None)
+        Returns: (final_response, plot_filename or None)
         """
         print(f"Question: {user_question}")
 
         # Beatriz decides: database or direct response
-        needs_database, direct_response, acknowledgment = self.triage_question(user_question, recent_messages)
+        needs_database, direct_response = self.triage_question(user_question, recent_messages)
 
         if not needs_database:
-            # Beatriz answered directly - no acknowledgment needed
-            return None, direct_response, None
+            # Beatriz answered directly
+            return direct_response, None
 
         # Database query needed - Gary gets the original question
-        print(f"Acknowledgment: {acknowledgment}")
-
         sql_response = self.generate_sql(user_question, recent_messages)
         print(f"Generated SQL: {sql_response}")
 
         sql_query = self._extract_sql(sql_response)
         if not sql_query or sql_response.strip().lower() == "none":
-            return acknowledgment, "I couldn't generate a valid SQL query for that question. Could you rephrase it?", None
+            return "I couldn't generate a valid SQL query for that question. Could you rephrase it?", None
 
         print(f"Executing: {sql_query}")
         result = execute_sql_query(sql_query)
@@ -307,7 +300,7 @@ Response: DIRECT: You're welcome! Feel free to ask if you need anything else fro
             )
 
         final_response = self.summarize_results(user_question, sql_query, result, recent_messages)
-        return acknowledgment, final_response, plot_filename
+        return final_response, plot_filename
 
     def summarize_no_query(self, user_question: str, recent_messages: list) -> str:
         """Summarize when no database query is needed."""

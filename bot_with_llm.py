@@ -68,14 +68,10 @@ class GradCafeBotWithLLM(discord.Client):
                 except discord.HTTPException as e:
                     print(f"Failed to fetch recent channel context: {e}")
 
-                # Beatriz triages and responds
-                acknowledgment, response_text, plot_filename = await asyncio.to_thread(query_llm, user_question, recent_messages)
+                # Beatriz responds directly
+                response_text, plot_filename = await asyncio.to_thread(query_llm, user_question, recent_messages)
 
-                # Send acknowledgment first if there is one (database queries)
-                if acknowledgment:
-                    await message.channel.send(f"*{acknowledgment}*")
-
-                # Send final response
+                # Send response
                 if len(response_text) > 2000:
                     response_text = response_text[:1997] + "..."
 
