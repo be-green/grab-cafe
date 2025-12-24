@@ -2,6 +2,7 @@ import discord
 from discord.ext import tasks
 import os
 import asyncio
+import random
 from database import init_database, get_unposted_postings, mark_posting_as_posted, format_posting_for_discord, refresh_aggregation_tables
 from scraper import fetch_and_store_new_postings
 from llm_interface import query_llm
@@ -11,6 +12,20 @@ DISCORD_CHANNEL_ID = int(os.getenv('DISCORD_CHANNEL_ID', '0'))
 CHECK_INTERVAL_SECONDS = 60
 ENABLE_LLM = 'true'
 POST_LOOKBACK_DAYS = 1
+
+# Stock phrases for when the bot is thinking
+THINKING_PHRASES = [
+    "Consulting the archive...",
+    "Searching through the infinite library of admissions data...",
+    "Let me peer into the database...",
+    "Examining the patterns in the data...",
+    "Running through the records...",
+    "Querying the admissions archive...",
+    "Looking through thousands of applications...",
+    "Checking what the data reveals...",
+    "Traversing the shelves of the Unending Archive...",
+    "One moment while I consult the records...",
+]
 
 class GradCafeBotWithLLM(discord.Client):
     def __init__(self, *args, **kwargs):
@@ -54,7 +69,8 @@ class GradCafeBotWithLLM(discord.Client):
                 await message.channel.send("Hi! Ask me anything about economics graduate admissions data. For example: 'What month do most acceptances come out?' or 'Which schools send the most interviews?'")
                 return
 
-            await message.channel.send(f"🤔 Analyzing your question: *{user_question[:100]}...*")
+            thinking_phrase = random.choice(THINKING_PHRASES)
+            await message.channel.send(f"*{thinking_phrase}*")
 
             try:
                 recent_messages = []
@@ -71,8 +87,11 @@ class GradCafeBotWithLLM(discord.Client):
 
                 response_text, plot_filename = await asyncio.to_thread(query_llm, user_question, recent_messages)
 
+                # Add Beatriz's signature
+                response_text = f"{response_text}\n\n~Beatriz Viterbo, Head Librarian of the Unending Archive"
+
                 if len(response_text) > 2000:
-                    response_text = response_text[:1997] + "..."
+                    response_text = response_text[:1947] + "...\n\n~Beatriz Viterbo, Head Librarian of the Unending Archive"
 
                 await message.channel.send(response_text)
 
