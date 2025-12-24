@@ -87,11 +87,8 @@ class GradCafeBotWithLLM(discord.Client):
 
                 response_text, plot_filename = await asyncio.to_thread(query_llm, user_question, recent_messages)
 
-                # Add Beatriz's signature
-                response_text = f"{response_text}\n\n~Beatriz Viterbo, Head Librarian of the Unending Archive"
-
                 if len(response_text) > 2000:
-                    response_text = response_text[:1947] + "...\n\n~Beatriz Viterbo, Head Librarian of the Unending Archive"
+                    response_text = response_text[:1997] + "..."
 
                 await message.channel.send(response_text)
 
