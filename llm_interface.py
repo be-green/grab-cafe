@@ -73,10 +73,12 @@ CRITICAL RULES:
 
 FIELD REFERENCE:
 - 'result' contains: 'Accepted', 'Rejected', 'Interview', 'Wait listed', 'Other'
-- 'decision_date' is in ISO format (YYYY-MM-DD) - use for date functions and grouping
+- 'decision_date' is in ISO format (YYYY-MM-DD) - use strftime('%Y', decision_date) to get year
+- For multiple years, use: strftime('%Y', decision_date) IN ('2024', '2025')
 - 'gpa' and 'gre' are REAL (numeric) - use directly in calculations (e.g., AVG(gpa), gpa > 3.5)
 - 'school' and 'program' are TEXT - use LOWER() for case-insensitive matching (e.g., LOWER(school) LIKE LOWER('%MIT%'))
 - Always use proper GROUP BY when using aggregate functions
+- For stats comparisons, get AVG, MIN, MAX to show ranges
 
 EXAMPLE QUERIES (note: all use the 'phd' table):
 
@@ -109,6 +111,12 @@ A: SELECT school, decision_date FROM phd WHERE LOWER(school) LIKE LOWER('%Stanfo
 
 Q: What schools sent acceptances in December?
 A: SELECT DISTINCT school FROM phd WHERE result = 'Accepted' AND strftime('%m', decision_date) = '12' ORDER BY school
+
+Q: What are the GPA and GRE ranges for students accepted to Harvard in 2024 and 2025?
+A: SELECT AVG(gpa) as avg_gpa, MIN(gpa) as min_gpa, MAX(gpa) as max_gpa, AVG(gre) as avg_gre, MIN(gre) as min_gre, MAX(gre) as max_gre, COUNT(*) as total FROM phd WHERE LOWER(school) LIKE LOWER('%Harvard%') AND result = 'Accepted' AND strftime('%Y', decision_date) IN ('2024', '2025') AND (gpa IS NOT NULL OR gre IS NOT NULL)
+
+Q: How do my stats (3.5 GPA, 165 GRE) compare to Yale acceptances?
+A: SELECT AVG(gpa) as avg_gpa, AVG(gre) as avg_gre, MIN(gpa) as min_gpa, MAX(gpa) as max_gpa, MIN(gre) as min_gre, MAX(gre) as max_gre FROM phd WHERE LOWER(school) LIKE LOWER('%Yale%') AND result = 'Accepted' AND (gpa IS NOT NULL OR gre IS NOT NULL)
 
 USER QUESTION: {user_question}
 
@@ -387,7 +395,13 @@ Rows (first {len(sample_rows)}): {sample_rows}"""
                     "\n"
                     "Do not use emojis. ASCII decorations like dashes, asterisks, and pipes are acceptable. "
                     "Keep responses under 300 words. "
-                    "Do not mention Gary or the technical details of SQL queries. Users see you as the sole interface to the archive."
+                    "Do not mention Gary or the technical details of SQL queries. Users see you as the sole interface to the archive. "
+                    "\n\n"
+                    "IMPORTANT for stats comparison questions:\n"
+                    "- When users ask about their chances with specific GPA/GRE, compare their stats to the AVG, MIN, MAX in results\n"
+                    "- Be honest but not discouraging - admissions are holistic\n"
+                    "- Mention that data shows accepted students but doesn't include all factors (recommendations, research, fit, etc.)\n"
+                    "- Example: 'Your 3.5 GPA is near the average of 3.6 for accepted students, and your 165 GRE is above the average of 163...'"
                 )
             },
             {"role": "user", "content": prompt}
