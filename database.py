@@ -154,7 +154,10 @@ def refresh_aggregation_tables():
     These tables are simplified views filtered by degree and date for easier LLM querying.
 
     Filters postings from 2018 onwards and creates separate tables for PhD and Masters degrees
-    with columns: school, program, gpa, gre (from gre_quant), result
+    with columns: school, program, decision_date, gpa, gre (from gre_quant), result
+
+    Note: decision_date is converted from text format "DD Mon" to ISO date "YYYY-MM-DD"
+    by combining with the year from date_added_iso, matching the R script logic.
     """
     with get_db_connection() as conn:
         cursor = conn.cursor()
@@ -166,6 +169,28 @@ def refresh_aggregation_tables():
             SELECT
                 school,
                 program,
+                CASE
+                    WHEN decision_date IS NOT NULL AND date_added_iso IS NOT NULL
+                    THEN date(
+                        strftime('%Y', date_added_iso) || '-' ||
+                        CASE substr(decision_date, -3)
+                            WHEN 'Jan' THEN '01'
+                            WHEN 'Feb' THEN '02'
+                            WHEN 'Mar' THEN '03'
+                            WHEN 'Apr' THEN '04'
+                            WHEN 'May' THEN '05'
+                            WHEN 'Jun' THEN '06'
+                            WHEN 'Jul' THEN '07'
+                            WHEN 'Aug' THEN '08'
+                            WHEN 'Sep' THEN '09'
+                            WHEN 'Oct' THEN '10'
+                            WHEN 'Nov' THEN '11'
+                            WHEN 'Dec' THEN '12'
+                        END || '-' ||
+                        printf('%02d', CAST(substr(decision_date, 1, instr(decision_date, ' ') - 1) AS INTEGER))
+                    )
+                    ELSE NULL
+                END as decision_date,
                 gpa,
                 gre_quant as gre,
                 result
@@ -181,6 +206,28 @@ def refresh_aggregation_tables():
             SELECT
                 school,
                 program,
+                CASE
+                    WHEN decision_date IS NOT NULL AND date_added_iso IS NOT NULL
+                    THEN date(
+                        strftime('%Y', date_added_iso) || '-' ||
+                        CASE substr(decision_date, -3)
+                            WHEN 'Jan' THEN '01'
+                            WHEN 'Feb' THEN '02'
+                            WHEN 'Mar' THEN '03'
+                            WHEN 'Apr' THEN '04'
+                            WHEN 'May' THEN '05'
+                            WHEN 'Jun' THEN '06'
+                            WHEN 'Jul' THEN '07'
+                            WHEN 'Aug' THEN '08'
+                            WHEN 'Sep' THEN '09'
+                            WHEN 'Oct' THEN '10'
+                            WHEN 'Nov' THEN '11'
+                            WHEN 'Dec' THEN '12'
+                        END || '-' ||
+                        printf('%02d', CAST(substr(decision_date, 1, instr(decision_date, ' ') - 1) AS INTEGER))
+                    )
+                    ELSE NULL
+                END as decision_date,
                 gpa,
                 gre_quant as gre,
                 result

@@ -8,9 +8,9 @@ from llm_interface import query_llm
 
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
 DISCORD_CHANNEL_ID = int(os.getenv('DISCORD_CHANNEL_ID', '0'))
-CHECK_INTERVAL_SECONDS = int(os.getenv('CHECK_INTERVAL_SECONDS', '60'))
-ENABLE_LLM = os.getenv('ENABLE_LLM', 'true').lower() == 'true'
-POST_LOOKBACK_DAYS = int(os.getenv('POST_LOOKBACK_DAYS', '1'))
+CHECK_INTERVAL_SECONDS = 60
+ENABLE_LLM = 'true'
+POST_LOOKBACK_DAYS = 1
 
 class GradCafeBotWithLLM(discord.Client):
     def __init__(self, *args, **kwargs):

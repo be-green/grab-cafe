@@ -35,7 +35,7 @@ def test_aggregation_tables():
         # Verify columns in phd table
         cursor.execute("PRAGMA table_info(phd)")
         phd_columns = [row[1] for row in cursor.fetchall()]
-        expected_columns = ['school', 'program', 'gpa', 'gre', 'result']
+        expected_columns = ['school', 'program', 'decision_date', 'gpa', 'gre', 'result']
 
         print(f"\n3. Verifying phd table columns...")
         print(f"   Expected: {expected_columns}")

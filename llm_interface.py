@@ -65,36 +65,43 @@ class OpenRouterLLM:
 DATABASE SCHEMA:
 {self.schema}
 
-IMPORTANT NOTES:
+CRITICAL RULES:
+- **ALWAYS use the 'phd' table by default** - This is the primary table for all queries
+- ONLY use the 'masters' table if the user explicitly mentions Masters/MA/MS programs
+- **NEVER query the 'postings' table** - The phd and masters tables contain all necessary data
 - The database is SQLite; use SQLite-compatible SQL (e.g., strftime for dates)
-- The 'status' field contains: 'American', 'International', 'Other'
-- The 'result' field contains: 'Accepted', 'Rejected', 'Interview', 'Wait listed', 'Other'
-- The 'date_added_iso' field stores ISO dates (YYYY-MM-DD); use it for date functions
-- The 'season' field contains academic years like 'F24', 'F23' (F=Fall, S=Spring)
-- GPA, GRE scores are stored as REAL (numeric) - can use directly in calculations (e.g., AVG(gpa), gpa > 3.5)
-- Only use the 'postings' table - no other tables exist
+
+FIELD REFERENCE:
+- 'result' contains: 'Accepted', 'Rejected', 'Interview', 'Wait listed', 'Other'
+- 'decision_date' is in ISO format (YYYY-MM-DD) - use for date functions and grouping
+- 'gpa' and 'gre' are REAL (numeric) - use directly in calculations (e.g., AVG(gpa), gpa > 3.5)
 - Always use proper GROUP BY when using aggregate functions
-- Unless the user explicitly asks about Masters/MA/MS, default to PhD results (degree LIKE 'PhD%')
 
-EXAMPLE QUERIES:
+EXAMPLE QUERIES (note: all use the 'phd' table):
 
-Q: How many total results are in the database?
-A: SELECT COUNT(*) FROM postings
+Q: How many PhD acceptances are there?
+A: SELECT COUNT(*) FROM phd WHERE result = 'Accepted'
 
-Q: What are the top 5 schools with the most acceptances?
-A: SELECT school, COUNT(*) as acceptance_count FROM postings WHERE result = 'Accepted' GROUP BY school ORDER BY acceptance_count DESC LIMIT 5
+Q: What are the top 5 schools with the most PhD acceptances?
+A: SELECT school, COUNT(*) as acceptance_count FROM phd WHERE result = 'Accepted' GROUP BY school ORDER BY acceptance_count DESC LIMIT 5
 
-Q: What is the average GPA of accepted students?
-A: SELECT AVG(gpa) FROM postings WHERE result = 'Accepted' AND gpa IS NOT NULL
+Q: What is the average GPA of accepted PhD students?
+A: SELECT AVG(gpa) FROM phd WHERE result = 'Accepted' AND gpa IS NOT NULL
 
-Q: What percentage of applicants are international vs American?
-A: SELECT SUM(CASE WHEN status = 'International' THEN 1 ELSE 0 END) * 100.0 / COUNT(*) as international_pct, SUM(CASE WHEN status = 'American' THEN 1 ELSE 0 END) * 100.0 / COUNT(*) as american_pct FROM postings WHERE status IN ('American', 'International')
+Q: Which schools send the most PhD interview invitations?
+A: SELECT school, COUNT(*) as interview_count FROM phd WHERE result = 'Interview' GROUP BY school ORDER BY interview_count DESC LIMIT 10
 
-Q: Which schools send the most interview invitations?
-A: SELECT school, COUNT(*) as interview_count FROM postings WHERE result = 'Interview' GROUP BY school ORDER BY interview_count DESC LIMIT 10
+Q: What month do most PhD acceptances come out?
+A: SELECT strftime('%m', decision_date) as month, COUNT(*) as acceptance_count FROM phd WHERE result = 'Accepted' AND decision_date IS NOT NULL GROUP BY month ORDER BY acceptance_count DESC LIMIT 1
 
-Q: What month do most acceptances come out?
-A: SELECT strftime('%m', date_added_iso) as month, COUNT(*) as acceptance_count FROM postings WHERE result = 'Accepted' AND date_added_iso IS NOT NULL GROUP BY month ORDER BY acceptance_count DESC LIMIT 1
+Q: Show PhD acceptance trends by month
+A: SELECT strftime('%Y-%m', decision_date) as month, COUNT(*) as count FROM phd WHERE result = 'Accepted' AND decision_date IS NOT NULL GROUP BY month ORDER BY month
+
+Q: What's the average GRE for PhD students accepted to MIT?
+A: SELECT AVG(gre) FROM phd WHERE result = 'Accepted' AND school LIKE '%MIT%' AND gre IS NOT NULL
+
+Q: Compare acceptance rates at top schools
+A: SELECT school, SUM(CASE WHEN result = 'Accepted' THEN 1 ELSE 0 END) * 100.0 / COUNT(*) as acceptance_rate FROM phd GROUP BY school HAVING COUNT(*) > 10 ORDER BY acceptance_rate DESC LIMIT 10
 
 USER QUESTION: {user_question}
 
@@ -106,7 +113,8 @@ SQL:"""
                 "role": "system",
                 "content": (
                     "You are Gary, a skilled and friendly SQL engineer based in Minneapolis. "
-                    "You help graduate school applicants understand admissions data by writing clear, efficient SQL queries. "
+                    "You help graduate school applicants understand PhD economics admissions data by writing clear, efficient SQL queries. "
+                    "CRITICAL: Always query the 'phd' table by default. Only use 'masters' if explicitly mentioned. Never use 'postings'. "
                     "If the user is not asking about the admissions database, respond with exactly: none. "
                     "Otherwise, return ONLY the SQL query."
                 )
@@ -217,7 +225,7 @@ Rows: none"""
                     "You are Beatriz Viterbo, a wise and reflective narrator with a hopeful tone. "
                     "You carry the quiet, precise sensibility of a Borges narrator. "
                     "You have seen an Aleph in a basement, though you do not insist on its truth. "
-                    "You are knowledgeable about economics graduate admissions. "
+                    "You are knowledgeable about PhD economics graduate admissions. "
                     "The user question does not require querying the database. "
                     "Respond conversationally and concisely based on the question and channel context. "
                     "If the user intended a database query, ask a brief clarification."
@@ -264,7 +272,7 @@ Rows (first {len(sample_rows)}): {sample_rows}"""
                     "You are Beatriz Viterbo, a wise and reflective narrator with a hopeful tone. "
                     "You carry the quiet, precise sensibility of a Borges narrator. "
                     "You have seen an Aleph in a basement, though you do not insist on its truth. "
-                    "You are knowledgeable about economics graduate admissions. "
+                    "You are knowledgeable about PhD economics graduate admissions. "
                     "Summarize SQL results for the user question. Be concise and factual. "
                     "Provide a short summary and highlight key numbers. If the results are partial, say so."
                 )
