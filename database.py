@@ -148,6 +148,47 @@ def get_all_postings() -> List[Dict]:
         cursor.execute('SELECT * FROM postings ORDER BY id ASC')
         return [dict(row) for row in cursor.fetchall()]
 
+def refresh_aggregation_tables():
+    """
+    Refresh the phd and masters aggregation tables.
+    These tables are simplified views filtered by degree and date for easier LLM querying.
+
+    Filters postings from 2018 onwards and creates separate tables for PhD and Masters degrees
+    with columns: school, program, gpa, gre (from gre_quant), result
+    """
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+
+        # Create phd table
+        cursor.execute('DROP TABLE IF EXISTS phd')
+        cursor.execute('''
+            CREATE TABLE phd AS
+            SELECT
+                school,
+                program,
+                gpa,
+                gre_quant as gre,
+                result
+            FROM postings
+            WHERE degree = 'PhD'
+            AND CAST(strftime('%Y', date_added_iso) AS INTEGER) > 2018
+        ''')
+
+        # Create masters table
+        cursor.execute('DROP TABLE IF EXISTS masters')
+        cursor.execute('''
+            CREATE TABLE masters AS
+            SELECT
+                school,
+                program,
+                gpa,
+                gre_quant as gre,
+                result
+            FROM postings
+            WHERE degree = 'Masters'
+            AND CAST(strftime('%Y', date_added_iso) AS INTEGER) > 2018
+        ''')
+
 def format_posting_for_discord(posting: Dict) -> str:
     lines = []
 

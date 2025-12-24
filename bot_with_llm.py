@@ -2,7 +2,7 @@ import discord
 from discord.ext import tasks
 import os
 import asyncio
-from database import init_database, get_unposted_postings, mark_posting_as_posted, format_posting_for_discord
+from database import init_database, get_unposted_postings, mark_posting_as_posted, format_posting_for_discord, refresh_aggregation_tables
 from scraper import fetch_and_store_new_postings
 from llm_interface import query_llm
 
@@ -93,6 +93,9 @@ class GradCafeBotWithLLM(discord.Client):
             new_count = await asyncio.to_thread(fetch_and_store_new_postings)
             if new_count > 0:
                 print(f"Found {new_count} new posting(s)")
+                # Refresh aggregation tables for LLM when new data is added
+                await asyncio.to_thread(refresh_aggregation_tables)
+                print("Aggregation tables updated")
 
             unposted = await asyncio.to_thread(get_unposted_postings, POST_LOOKBACK_DAYS)
 

@@ -91,15 +91,43 @@ Columns:
   - comment: TEXT (user comments)
   - scraped_at: TIMESTAMP (when we scraped it)
   - posted_to_discord: BOOLEAN (0 or 1)
+  - result: TEXT (extracted result: Accepted, Rejected, Interview, Waitlist)
+  - decision_date: TEXT (extracted decision date)
 
 Total postings: ~30,545 individual admissions results
 
+Table: phd (RECOMMENDED for PhD-specific queries)
+Simplified aggregation table for PhD programs (2018+)
+Columns:
+  - school: TEXT (university name)
+  - program: TEXT (program name)
+  - gpa: REAL (GPA score)
+  - gre: REAL (GRE quantitative score)
+  - result: TEXT (Accepted, Rejected, Interview, Waitlist)
+
+Total PhD postings: ~8,241
+
+Table: masters (RECOMMENDED for Masters-specific queries)
+Simplified aggregation table for Masters programs (2018+)
+Columns:
+  - school: TEXT (university name)
+  - program: TEXT (program name)
+  - gpa: REAL (GPA score)
+  - gre: REAL (GRE quantitative score)
+  - result: TEXT (Accepted, Rejected, Interview, Waitlist)
+
+Total Masters postings: ~1,155
+
+IMPORTANT: Use the 'phd' or 'masters' tables for simpler queries when you only need
+school, program, scores, and result. These tables are filtered for 2018+ and by degree type.
+Use the 'postings' table when you need additional fields like dates, status, season, or comments.
+
 Common queries:
-- Count acceptances by school
-- Average GPA/GRE by decision type
-- Acceptance rates over time
-- International vs American acceptance rates
-- When do schools typically send decisions
+- Count acceptances by school (use phd/masters tables)
+- Average GPA/GRE by decision type (use phd/masters tables)
+- Acceptance rates over time (use postings table for date_added_iso)
+- International vs American acceptance rates (use postings table for status)
+- When do schools typically send decisions (use postings table for decision_date or date_added_iso)
 """
     return schema
 
