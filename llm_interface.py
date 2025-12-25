@@ -277,23 +277,20 @@ SQL:"""
             return f"The answer is: {value}"
 
         if len(columns) == 2 and len(rows) <= 10:
-            formatted = []
-            for row in rows:
-                formatted.append(f"{row[0]}: {row[1]}")
-            return "\n".join(formatted)
+            items = [f"{row[0]} ({row[1]})" for row in rows[:5]]
+            if len(rows) <= 3:
+                return f"The records show {', '.join(items)}."
+            else:
+                return f"Top results include {', '.join(items[:3])}, among others."
 
-        if len(rows) <= 20:
-            formatted = "Here's what I found:\n"
-            for i, row in enumerate(rows, 1):
-                if len(row) == 1:
-                    formatted += f"{i}. {row[0]}\n"
-                else:
-                    formatted += f"{i}. {' | '.join(str(x) for x in row)}\n"
-            return formatted.strip()
+        if len(rows) <= 5:
+            if len(rows[0]) == 1:
+                items = [str(row[0]) for row in rows]
+                return f"I found: {', '.join(items)}."
+            else:
+                return f"I found {len(rows)} records matching your query."
 
-        return f"I found {len(rows)} results. Here are the first few:\n" + "\n".join(
-            [f"{i}. {' | '.join(str(x) for x in row)}" for i, row in enumerate(rows[:10], 1)]
-        )
+        return f"I cataloged {len(rows)} results for that query."
 
     def plan_response(self, user_question: str, recent_messages: list):
         """
@@ -570,7 +567,12 @@ Columns: {columns}
 Row count: {row_count}
 Rows (first {len(sample_rows)}): {sample_rows}
 
-Your task: Provide a clear, concise answer to the user's question based on this data."""
+Your task: SUMMARIZE this data in natural prose to answer the user's question.
+
+CRITICAL: DO NOT list individual rows. DO NOT use pipe separators. DO NOT format as a list.
+Instead, describe patterns, highlight key findings, and synthesize the information into flowing sentences.
+If there are many rows, describe overall trends, ranges, top items, or notable patterns.
+Be conversational and informative, not mechanical."""
 
         messages = [
             {
@@ -602,15 +604,19 @@ Your task: Provide a clear, concise answer to the user's question based on this 
                     "merely echoes of records already filed. The repetition haunts you. But you remain helpful, "
                     "direct, no-nonsense. The work must continue. "
                     "\n\n"
-                    "THE WORK: Gary retrieved the records you requested. Now you interpret them. State the numbers. "
-                    "Answer the question. Move on. There are always more files to catalog. "
+                    "THE WORK: Gary retrieved the records you requested. Now you interpret them for the user. "
+                    "Don't just recite what Gary found—SUMMARIZE it. Describe patterns. Highlight key insights. "
+                    "Synthesize the numbers into meaningful statements. The archive is vast; users need interpretation, "
+                    "not raw data dumps. Answer the question. Move on. There are always more files to catalog. "
                     "\n\n"
-                    "VOICE: Terse. Factual. Slightly haunted. Write in plain sentences. No formatting. "
+                    "VOICE: Terse. Factual. Slightly haunted. Write in plain sentences. NEVER lists or formatted data. "
                     "\n\n"
                     "CRITICAL RULES:\n"
-                    "- Be MAXIMALLY BRIEF. 1-2 sentences maximum.\n"
-                    "- State key numbers directly. No elaboration.\n"
-                    "- ABSOLUTELY NO bullet points, lists, dashes, or markdown formatting.\n"
+                    "- SUMMARIZE the data in 1-3 natural sentences. DO NOT list individual rows.\n"
+                    "- When you have multiple data points, describe patterns, ranges, or highlights.\n"
+                    "- Example: Instead of listing '1. MIT: 3.8, 2. Stanford: 3.7, 3. Harvard: 3.9', say 'Among top programs, GPAs ranged from 3.7 to 3.9, with Harvard highest.'\n"
+                    "- ABSOLUTELY NO bullet points, lists, dashes, pipe separators, or markdown formatting.\n"
+                    "- Write in flowing prose. Librarians speak in sentences, not data dumps.\n"
                     "\n\n"
                     "OPENING PHRASES (use occasionally, not always):\n"
                     "- 'I've cataloged...'\n"
@@ -635,13 +641,19 @@ Your task: Provide a clear, concise answer to the user's question based on this 
                     "A: MIT averaged 3.8 GPA, Harvard 3.9.\n"
                     "\n"
                     "Q: Which schools send the most interviews?\n"
-                    "A: The records show Stanford, MIT, and Princeton send the most interviews.\n"
+                    "A: The records show Stanford leads with 342 interviews, followed by MIT and Princeton.\n"
+                    "\n"
+                    "Q: What are the top 10 schools by acceptance count?\n"
+                    "A: Berkeley, MIT, and Stanford dominate with over 500 acceptances each. The next tier includes Chicago, Princeton, and Yale ranging from 300 to 450.\n"
                     "\n"
                     "Q: What's the median GRE score?\n"
                     "A: In the archive, 167 is the median quantitative score.\n"
                     "\n"
                     "Q: How does 3.5 GPA compare to Yale acceptances?\n"
-                    "A: Yale acceptances averaged 3.85 GPA. I fear your 3.5 falls below that.\n"
+                    "A: Yale acceptances averaged 3.85 GPA with a range of 3.6 to 4.0. Your 3.5 falls below their minimum.\n"
+                    "\n"
+                    "Q: What are GPA ranges for top programs?\n"
+                    "A: Among elite programs, accepted students typically had GPAs between 3.7 and 4.0, with most clustering around 3.85.\n"
                     "\n"
                     "Q: Should I apply to top programs?\n"
                     "A: Probably not if you are asking me.\n"
@@ -651,13 +663,13 @@ Your task: Provide a clear, concise answer to the user's question based on this 
         ]
 
         try:
-            # Reduce tokens + stop sequences to prevent lists/formatting
+            # Moderate token limit for summaries + stop sequences to prevent lists/formatting
             response = self._chat_completion(
                 OPENROUTER_SUMMARY_MODEL,
                 messages,
                 temperature=0.2,
-                max_tokens=300,  # Drastically reduced to force brevity
-                stop=["\n-", "\n*", "\n•", "\n1.", "\n2.", "\n3.", "**", "##"]  # Stop on list markers
+                max_tokens=450,  # Enough for good summaries without being verbose
+                stop=["\n-", "\n*", "\n•", "\n1.", "\n2.", "\n3.", "**", "##", " | "]  # Stop on list markers and pipes
             )
             final_response = response.strip() or self.format_results(user_question, query_result)
             # Clean and validate the response
