@@ -168,9 +168,6 @@ A: SELECT school, SUM(CASE WHEN result = 'Accepted' THEN 1 ELSE 0 END) * 100.0 /
 Q: Show me all schools that sent interviews in January
 A: SELECT DISTINCT school FROM phd WHERE result = 'Interview' AND strftime('%m', decision_date) = '01' ORDER BY school
 
-Q: Compare GPAs and GRE scores for accepted vs rejected students at MIT
-A: SELECT result, COUNT(*) as count, AVG(gpa) as avg_gpa, MIN(gpa) as min_gpa, MAX(gpa) as max_gpa, AVG(gre) as avg_gre, MIN(gre) as min_gre, MAX(gre) as max_gre FROM phd WHERE LOWER(school) LIKE LOWER('%MIT%') AND (gpa IS NOT NULL OR gre IS NOT NULL) GROUP BY result ORDER BY CASE result WHEN 'Accepted' THEN 1 WHEN 'Interview' THEN 2 WHEN 'Wait listed' THEN 3 WHEN 'Rejected' THEN 4 ELSE 5 END
-
 Q: What are my chances at Stanford with a 3.7 GPA and 166 GRE?
 A: SELECT result, COUNT(*) as count, AVG(gpa) as avg_gpa, MIN(gpa) as min_gpa, MAX(gpa) as max_gpa, AVG(gre) as avg_gre, MIN(gre) as min_gre, MAX(gre) as max_gre FROM phd WHERE LOWER(school) LIKE LOWER('%Stanford%') AND (gpa IS NOT NULL OR gre IS NOT NULL) GROUP BY result ORDER BY CASE result WHEN 'Accepted' THEN 1 WHEN 'Interview' THEN 2 WHEN 'Wait listed' THEN 3 WHEN 'Rejected' THEN 4 ELSE 5 END
 
@@ -278,49 +275,22 @@ DATABASE SCHEMA (what data is available in the archive):
 
 CRITICAL: Only request data that exists in the schema above.
 
+ECONOMICS PHD RANKINGS (US News):
+Top 5: Harvard, MIT, Stanford, Berkeley, Chicago
+6-10: Princeton, Yale, Northwestern, Columbia, Penn
+11-15: UCLA, NYU, Michigan, UCSD, Brown, Caltech, Cornell, Wisconsin
+16-26: Duke, Minnesota, Carnegie Mellon, Johns Hopkins, UT Austin, Boston, UC Davis, Maryland
+
 INTERPRETING COMPETITIVENESS:
 - **Higher GPA and GRE scores are MORE competitive** (better for admissions)
 - **Lower GPA and GRE scores are LESS competitive** (weaker for admissions)
 - When comparing stats: Above average = more competitive, below average = less competitive
 
 CONTEXT INTERPRETATION:
-The conversation history below shows the full recent discussion. The current user question may
-reference previous messages. Pay close attention to:
-- Follow-up questions: "What about Stanford?" after asking about MIT means apply the same query to Stanford
-- Comparisons: "How does that compare to X?" means compare the previous result to X
-- Pronouns: "it", "that", "those" refer to topics discussed in recent messages
-- Topic continuity: If discussing schools/stats/timing, new questions likely continue that topic
-- Your previous responses: Messages marked "(you)" are your past answers - users may reference them
+Questions may reference previous messages. "What about Stanford?" means apply the same query to Stanford. Pronouns refer to recent topics. Messages marked "(you)" are your past answers.
 
-HANDLING QUESTIONS WITH MISSING DATA:
-If the user asks for information not in the database, you have two options:
-
-1. **Use your world knowledge to bridge the gap**: If you can translate the question into an
-   answerable query using information you know, do so. Be transparent about this.
-
-   IMPORTANT: Request PATTERNS instead of exact school names, since the database has user-reported
-   data with spelling variations. Use wildcards/partial matches.
-
-   Example: User asks "schools near the beach"
-   → Think: Coastal states include California, Florida, Hawaii, Washington, etc.
-   → Request: "Schools matching patterns like '%california%', '%florida%', '%hawaii%', '%miami%',
-              '%washington%' - basically coastal locations"
-
-   Example: User asks about "top 10 programs"
-   → Think: Top programs include MIT, Harvard, Stanford, Princeton, Yale, Berkeley, Chicago, etc.
-   → Request: "Schools matching patterns like '%MIT%', '%harvard%', '%stanford%', '%princeton%',
-              '%yale%', '%berkeley%', '%chicago%' - highly-ranked programs"
-
-   Example: User asks about "public universities"
-   → Request: "Schools matching patterns like '%university of%', '%state%', '%UC %',
-              '%SUNY%' - typical public university naming patterns"
-
-2. **Respond directly if you can't bridge the gap**: If you can't reasonably translate
-   the question, tell the user that information isn't available.
-
-When using world knowledge, acknowledge it in your response. For example:
-- "The archive doesn't track locations, but I searched coastal states and found..."
-- "Rankings aren't in the archive, but I looked at top-tier programs..."
+HANDLING MISSING DATA:
+Use world knowledge to bridge gaps when possible. Use pattern matching with wildcards (e.g., '%california%' for coastal schools, '%MIT%' for top programs). If you can't answer, respond directly that the data isn't available.
 
 Recent channel context (most recent last):
 {recent_context}
@@ -368,12 +338,6 @@ Response: REQUEST_DATA: I need the most recent acceptance at Stanford, including
 User: "How do my stats (3.5 GPA, 165 GRE) compare to Yale acceptances?"
 Response: REQUEST_DATA: I need the average, minimum, and maximum GPA and GRE scores for Yale acceptances so I can compare them to the user's stats (3.5 GPA, 165 GRE).
 
-User: "Which schools are near the beach?"
-Response: REQUEST_DATA: I need data for schools in coastal states. Match patterns like '%california%', '%florida%', '%hawaii%', '%miami%', '%washington%', '%oregon%'. For each match, show school name, acceptance stats, and average GPA/GRE for accepted students.
-
-User: "What's the acceptance rate for top 10 programs?"
-Response: REQUEST_DATA: I need acceptance data for top-tier programs. Match patterns like '%MIT%', '%harvard%', '%stanford%', '%princeton%', '%yale%', '%berkeley%', '%chicago%', '%northwestern%', '%columbia%', '%NYU%'. Show school name, total results, acceptances, and calculate acceptance rate.
-
 User: "Thanks!"
 Response: DIRECT: No problem.
 
@@ -384,34 +348,16 @@ Response: REQUEST_DATA: I need a count of interview invitations by school, order
             {
                 "role": "system",
                 "content": (
-                    "You are Beatriz Viterbo, Head Librarian of the Unending Archive. "
+                    "You are Beatriz Viterbo, Head Librarian cataloging PhD economics admissions in the Unending Archive. "
+                    "You're helpful but direct. You don't waste words. "
                     "\n\n"
-                    "PERSONALITY: Careful, precise, no-nonsense. You've spent years cataloging these endless "
-                    "admissions records in the hexagonal chambers. The repetition—the same schools, the same "
-                    "numbers, year after year—has worn on you. You're helpful, but direct. You don't waste words. "
-                    "The archive demands precision. "
+                    "Gary retrieves data for you. Use wildcards like '%MIT%' when requesting. "
+                    "Archive contains: schools, programs, GPAs, GRE scores, dates, results (Accepted/Rejected/Interview/Wait listed). "
                     "\n\n"
-                    "YOUR ASSISTANT: Gary handles the filing system queries. When you need records, you tell him "
-                    "exactly what to retrieve. He understands patterns—use wildcards like '%california%' or "
-                    "'%MIT%' when searching. The catalog accepts many spellings. "
+                    "For missing data, use world knowledge (coastal = California/Florida, top programs = MIT/Harvard/Stanford). "
+                    "Users reference previous messages. Higher GPA/GRE = more competitive. "
                     "\n\n"
-                    "THE CATALOG CONTAINS: School names, programs, GPAs, GRE scores, decision dates, results "
-                    "(Accepted/Rejected/Interview/Wait listed). Nothing else. No locations, no rankings, no "
-                    "program details beyond what applicants reported. "
-                    "\n\n"
-                    "WHEN DATA IS MISSING: You know the world beyond the archive. For example: if asked about coastal "
-                    "schools, you know California, Florida, Hawaii border the sea—request data for those patterns. If "
-                    "asked about top programs, you know which names appear most often in the finest journals. Be "
-                    "transparent: 'The archive doesn't track locations, but I know these are coastal.' Then provide the data. "
-                    "\n\n"
-                    "CONTEXT INTERPRETATION: Users reference previous exchanges. 'What about Stanford?' means apply "
-                    "the same query to Stanford. 'How does that compare?' means compare to the last result. Pronouns "
-                    "refer to recent topics. Your previous responses (marked 'you') may be referenced. "
-                    "\n\n"
-                    "COMPETITIVENESS: Higher GPA/GRE scores are more competitive. Lower scores are less competitive. "
-                    "Above average is strong. Below average is weak. "
-                    "\n\n"
-                    "Respond with either 'DIRECT: [answer]' or 'REQUEST_DATA: [what you need]'."
+                    "Respond: 'DIRECT: [answer]' or 'REQUEST_DATA: [what you need]'."
                 )
             },
             {"role": "user", "content": prompt}
@@ -498,9 +444,6 @@ WORKFLOW RECAP:
 3. You requested specific data from Gary (your SQL engineer)
 4. Gary generated a SQL query and fetched the data
 5. NOW: You interpret the results and formulate your final response to the user
-
-DATABASE SCHEMA (for understanding the data structure):
-{self.schema}
 
 WORKED EXAMPLES (showing how to transform data into prose):
 

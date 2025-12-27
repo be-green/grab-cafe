@@ -78,8 +78,8 @@ class GradCafeBotWithLLM(discord.Client):
             try:
                 recent_messages = []
                 try:
-                    # Fetch more messages for better context (30 instead of 10)
-                    async for recent_message in message.channel.history(limit=30, before=message, oldest_first=False):
+                    # Fetch recent messages for context
+                    async for recent_message in message.channel.history(limit=6, before=message, oldest_first=False):
                         content = recent_message.content.strip()
                         if content:
                             recent_messages.append({
