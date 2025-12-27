@@ -136,7 +136,7 @@ Q: What are the top 5 schools with the most PhD acceptances?
 A: SELECT school, COUNT(*) as acceptance_count FROM phd WHERE result = 'Accepted' GROUP BY school ORDER BY acceptance_count DESC LIMIT 5
 
 Q: What is the average GPA of accepted PhD students?
-A: SELECT AVG(gpa) FROM phd WHERE result = 'Accepted' AND gpa IS NOT NULL
+A: SELECT AVG(gpa) FROM phd WHERE result = 'Accepted' AND gpa BETWEEN 1.0 AND 4.0
 
 Q: Which schools send the most PhD interview invitations?
 A: SELECT school, COUNT(*) as interview_count FROM phd WHERE result = 'Interview' GROUP BY school ORDER BY interview_count DESC LIMIT 10
@@ -148,10 +148,10 @@ Q: Show PhD acceptance trends by month
 A: SELECT strftime('%Y-%m', decision_date) as month, COUNT(*) as count FROM phd WHERE result = 'Accepted' AND decision_date IS NOT NULL GROUP BY month ORDER BY month
 
 Q: What's the average GRE for PhD students accepted to MIT?
-A: SELECT AVG(gre) FROM phd WHERE result = 'Accepted' AND LOWER(school) LIKE LOWER('%MIT%') AND gre IS NOT NULL
+A: SELECT AVG(gre) FROM phd WHERE result = 'Accepted' AND LOWER(school) LIKE LOWER('%MIT%') AND gre BETWEEN 130 AND 170
 
 Q: Compare acceptance stats across top 5 programs
-A: SELECT CASE WHEN LOWER(school) LIKE '%harvard%' THEN 'Harvard' WHEN LOWER(school) LIKE '%mit%' THEN 'MIT' WHEN LOWER(school) LIKE '%stanford%' THEN 'Stanford' WHEN LOWER(school) LIKE '%berkeley%' THEN 'Berkeley' WHEN LOWER(school) LIKE '%chicago%' THEN 'Chicago' END AS school_name, COUNT(*) as accepted_count, AVG(gpa) as avg_gpa, AVG(gre) as avg_gre FROM phd WHERE result = 'Accepted' AND (LOWER(school) LIKE '%harvard%' OR LOWER(school) LIKE '%mit%' OR LOWER(school) LIKE '%stanford%' OR LOWER(school) LIKE '%berkeley%' OR LOWER(school) LIKE '%chicago%') GROUP BY school_name
+A: SELECT CASE WHEN LOWER(school) LIKE '%harvard%' THEN 'Harvard' WHEN LOWER(school) LIKE '%mit%' THEN 'MIT' WHEN LOWER(school) LIKE '%stanford%' THEN 'Stanford' WHEN LOWER(school) LIKE '%berkeley%' THEN 'Berkeley' WHEN LOWER(school) LIKE '%chicago%' THEN 'Chicago' END AS school_name, COUNT(*) as accepted_count, AVG(gpa) as avg_gpa, AVG(gre) as avg_gre FROM phd WHERE result = 'Accepted' AND (LOWER(school) LIKE '%harvard%' OR LOWER(school) LIKE '%mit%' OR LOWER(school) LIKE '%stanford%' OR LOWER(school) LIKE '%berkeley%' OR LOWER(school) LIKE '%chicago%') AND gpa BETWEEN 1.0 AND 4.0 AND gre BETWEEN 130 AND 170 GROUP BY school_name
 
 Q: When was the most recent acceptance at Stanford?
 A: SELECT school, decision_date FROM phd WHERE LOWER(school) LIKE LOWER('%Stanford%') AND result = 'Accepted' AND decision_date IS NOT NULL ORDER BY decision_date DESC LIMIT 1
@@ -160,13 +160,13 @@ Q: What schools sent acceptances in December?
 A: SELECT DISTINCT school FROM phd WHERE result = 'Accepted' AND strftime('%m', decision_date) = '12' ORDER BY school
 
 Q: What are the GPA and GRE ranges for students accepted to Harvard in 2024 and 2025?
-A: SELECT AVG(gpa) as avg_gpa, MIN(gpa) as min_gpa, MAX(gpa) as max_gpa, AVG(gre) as avg_gre, MIN(gre) as min_gre, MAX(gre) as max_gre, COUNT(*) as total FROM phd WHERE LOWER(school) LIKE LOWER('%Harvard%') AND result = 'Accepted' AND strftime('%Y', decision_date) IN ('2024', '2025') AND (gpa IS NOT NULL OR gre IS NOT NULL)
+A: SELECT AVG(gpa) as avg_gpa, MIN(gpa) as min_gpa, MAX(gpa) as max_gpa, AVG(gre) as avg_gre, MIN(gre) as min_gre, MAX(gre) as max_gre, COUNT(*) as total FROM phd WHERE LOWER(school) LIKE LOWER('%Harvard%') AND result = 'Accepted' AND strftime('%Y', decision_date) IN ('2024', '2025') AND gpa BETWEEN 1.0 AND 4.0 AND gre BETWEEN 130 AND 170
 
 Q: How do my stats (3.5 GPA, 165 GRE) compare to Yale acceptances?
-A: SELECT AVG(gpa) as avg_gpa, AVG(gre) as avg_gre, MIN(gpa) as min_gpa, MAX(gpa) as max_gpa, MIN(gre) as min_gre, MAX(gre) as max_gre FROM phd WHERE LOWER(school) LIKE LOWER('%Yale%') AND result = 'Accepted' AND (gpa IS NOT NULL OR gre IS NOT NULL)
+A: SELECT AVG(gpa) as avg_gpa, AVG(gre) as avg_gre, MIN(gpa) as min_gpa, MAX(gpa) as max_gpa, MIN(gre) as min_gre, MAX(gre) as max_gre FROM phd WHERE LOWER(school) LIKE LOWER('%Yale%') AND result = 'Accepted' AND gpa BETWEEN 1.0 AND 4.0 AND gre BETWEEN 130 AND 170
 
 Q: Which schools accept students with GPAs below 3.5?
-A: SELECT DISTINCT school FROM phd WHERE result = 'Accepted' AND gpa < 3.5 AND gpa IS NOT NULL ORDER BY school
+A: SELECT DISTINCT school FROM phd WHERE result = 'Accepted' AND gpa < 3.5 AND gpa >= 1.0 ORDER BY school
 
 Q: What are acceptance rates by school?
 A: SELECT school, SUM(CASE WHEN result = 'Accepted' THEN 1 ELSE 0 END) * 100.0 / COUNT(*) as acceptance_rate, COUNT(*) as total_results FROM phd GROUP BY school HAVING COUNT(*) > 5 ORDER BY acceptance_rate DESC
@@ -175,13 +175,13 @@ Q: Show me all schools that sent interviews in January
 A: SELECT DISTINCT school FROM phd WHERE result = 'Interview' AND strftime('%m', decision_date) = '01' ORDER BY school
 
 Q: What are my chances at Stanford with a 3.7 GPA and 166 GRE?
-A: SELECT result, COUNT(*) as count, AVG(gpa) as avg_gpa, MIN(gpa) as min_gpa, MAX(gpa) as max_gpa, AVG(gre) as avg_gre, MIN(gre) as min_gre, MAX(gre) as max_gre FROM phd WHERE LOWER(school) LIKE LOWER('%Stanford%') AND (gpa IS NOT NULL OR gre IS NOT NULL) GROUP BY result ORDER BY CASE result WHEN 'Accepted' THEN 1 WHEN 'Interview' THEN 2 WHEN 'Wait listed' THEN 3 WHEN 'Rejected' THEN 4 ELSE 5 END
+A: SELECT result, COUNT(*) as count, AVG(gpa) as avg_gpa, MIN(gpa) as min_gpa, MAX(gpa) as max_gpa, AVG(gre) as avg_gre, MIN(gre) as min_gre, MAX(gre) as max_gre FROM phd WHERE LOWER(school) LIKE LOWER('%Stanford%') AND gpa BETWEEN 1.0 AND 4.0 AND gre BETWEEN 130 AND 170 GROUP BY result ORDER BY CASE result WHEN 'Accepted' THEN 1 WHEN 'Interview' THEN 2 WHEN 'Wait listed' THEN 3 WHEN 'Rejected' THEN 4 ELSE 5 END
 
 Q: What are acceptance rates for people with GPAs below 3.5?
-A: SELECT result, COUNT(*) as count, AVG(gpa) as avg_gpa, MIN(gpa) as min_gpa, MAX(gpa) as max_gpa, AVG(gre) as avg_gre FROM phd WHERE gpa < 3.5 AND gpa IS NOT NULL GROUP BY result ORDER BY CASE result WHEN 'Accepted' THEN 1 WHEN 'Interview' THEN 2 WHEN 'Wait listed' THEN 3 WHEN 'Rejected' THEN 4 ELSE 5 END
+A: SELECT result, COUNT(*) as count, AVG(gpa) as avg_gpa, MIN(gpa) as min_gpa, MAX(gpa) as max_gpa, AVG(gre) as avg_gre FROM phd WHERE gpa < 3.5 AND gpa >= 1.0 AND gre BETWEEN 130 AND 170 GROUP BY result ORDER BY CASE result WHEN 'Accepted' THEN 1 WHEN 'Interview' THEN 2 WHEN 'Wait listed' THEN 3 WHEN 'Rejected' THEN 4 ELSE 5 END
 
 Q: How do applicants with GPAs below 3.6 perform at MIT compared to the overall applicant pool?
-A: WITH overall AS (SELECT COUNT(*) as total, SUM(CASE WHEN result = 'Accepted' THEN 1 ELSE 0 END) as accepted, (SUM(CASE WHEN result = 'Accepted' THEN 1 ELSE 0 END) * 100.0 / COUNT(*)) as acceptance_rate, AVG(gpa) as avg_gpa, AVG(gre) as avg_gre FROM phd WHERE LOWER(school) LIKE LOWER('%MIT%') AND (gpa IS NOT NULL OR gre IS NOT NULL)), filtered AS (SELECT COUNT(*) as total, SUM(CASE WHEN result = 'Accepted' THEN 1 ELSE 0 END) as accepted, (SUM(CASE WHEN result = 'Accepted' THEN 1 ELSE 0 END) * 100.0 / COUNT(*)) as acceptance_rate, AVG(gpa) as avg_gpa, AVG(gre) as avg_gre FROM phd WHERE LOWER(school) LIKE LOWER('%MIT%') AND gpa < 3.6 AND gpa IS NOT NULL) SELECT overall.total as overall_total, overall.accepted as overall_accepted, overall.acceptance_rate as overall_acceptance_rate, overall.avg_gpa as overall_avg_gpa, overall.avg_gre as overall_avg_gre, filtered.total as low_gpa_total, filtered.accepted as low_gpa_accepted, filtered.acceptance_rate as low_gpa_acceptance_rate, filtered.avg_gpa as low_gpa_avg_gpa, filtered.avg_gre as low_gpa_avg_gre FROM overall, filtered
+A: WITH overall AS (SELECT COUNT(*) as total, SUM(CASE WHEN result = 'Accepted' THEN 1 ELSE 0 END) as accepted, (SUM(CASE WHEN result = 'Accepted' THEN 1 ELSE 0 END) * 100.0 / COUNT(*)) as acceptance_rate, AVG(gpa) as avg_gpa, AVG(gre) as avg_gre FROM phd WHERE LOWER(school) LIKE LOWER('%MIT%') AND gpa BETWEEN 1.0 AND 4.0 AND gre BETWEEN 130 AND 170), filtered AS (SELECT COUNT(*) as total, SUM(CASE WHEN result = 'Accepted' THEN 1 ELSE 0 END) as accepted, (SUM(CASE WHEN result = 'Accepted' THEN 1 ELSE 0 END) * 100.0 / COUNT(*)) as acceptance_rate, AVG(gpa) as avg_gpa, AVG(gre) as avg_gre FROM phd WHERE LOWER(school) LIKE LOWER('%MIT%') AND gpa < 3.6 AND gpa >= 1.0 AND gre BETWEEN 130 AND 170) SELECT overall.total as overall_total, overall.accepted as overall_accepted, overall.acceptance_rate as overall_acceptance_rate, overall.avg_gpa as overall_avg_gpa, overall.avg_gre as overall_avg_gre, filtered.total as low_gpa_total, filtered.accepted as low_gpa_accepted, filtered.acceptance_rate as low_gpa_acceptance_rate, filtered.avg_gpa as low_gpa_avg_gpa, filtered.avg_gre as low_gpa_avg_gre FROM overall, filtered
 
 BEATRIZ'S DATA REQUEST: {beatriz_request}
 
@@ -686,6 +686,49 @@ def get_llm():
     if _llm_instance is None:
         _llm_instance = OpenRouterLLM()
     return _llm_instance
+
+def describe_query_results(user_question: str, query_result: dict) -> str:
+    """
+    Beatriz provides a brief description of the query and how to interpret the columns.
+    Used when there are too many rows to summarize all the data.
+    """
+    if not query_result or query_result.get('error') or not query_result.get('rows'):
+        return ""
+
+    columns = query_result['columns']
+    row_count = len(query_result['rows'])
+
+    prompt = f"""You are Beatriz Viterbo, Head Librarian of the Unending Archive.
+
+User question: {user_question}
+
+The query returned {row_count} results with the following columns: {', '.join(columns)}
+
+Your task: Write 1-2 sentences explaining what this query shows and how to interpret the columns.
+
+Be concise and direct. Explain what each column represents in the context of the user's question.
+
+Examples:
+- "This shows acceptance statistics by school. The columns show school name, number accepted, average GPA, and average GRE quantitative score."
+- "These are applicants grouped by admission result. You'll see the result type (Accepted/Rejected/Interview), count, and average stats for each group."
+- "This compares overall statistics versus applicants with lower GPAs. Each row shows total applicants, acceptances, acceptance rate, and average scores for both groups."
+
+Your description:"""
+
+    messages = [
+        {"role": "system", "content": "You are a librarian helping users understand query results. Be concise."},
+        {"role": "user", "content": prompt}
+    ]
+
+    llm = get_llm()
+    response = llm._chat_completion(
+        OPENROUTER_SUMMARY_MODEL,
+        messages,
+        temperature=0.3,
+        max_tokens=150
+    )
+
+    return response.strip()
 
 def query_llm(question: str, recent_messages: list = None):
     """

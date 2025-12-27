@@ -5,7 +5,7 @@ import os
 import asyncio
 from database import init_database, get_unposted_postings, mark_posting_as_posted, format_posting_for_discord, refresh_aggregation_tables
 from scraper import fetch_and_store_new_postings
-from llm_interface import query_llm, get_last_sql_query
+from llm_interface import query_llm, get_last_sql_query, describe_query_results
 
 class PaginatedDataView(View):
     def __init__(self, query_result, rows_per_page=5):
@@ -20,15 +20,10 @@ class PaginatedDataView(View):
             self.previous_button.disabled = True
             self.next_button.disabled = True
 
-    def get_embed(self):
+    def format_table_page(self):
+        """Format current page as a table string"""
         start_idx = self.current_page * self.rows_per_page
         end_idx = min(start_idx + self.rows_per_page, len(self.query_result['rows']))
-
-        embed = discord.Embed(
-            title="Query Results",
-            description=f"Page {self.current_page + 1} of {self.total_pages}",
-            color=discord.Color.blue()
-        )
 
         columns = self.query_result['columns']
         page_rows = self.query_result['rows'][start_idx:end_idx]
@@ -42,39 +37,47 @@ class PaginatedDataView(View):
             else:
                 return str(val)
 
-        # Calculate column widths
+        # Calculate column widths (max 20 chars per column to prevent overflow)
         col_widths = {}
         for col in columns:
-            col_widths[col] = len(col)
+            col_widths[col] = min(len(col), 20)
 
         for row in page_rows:
             for col, val in zip(columns, row):
-                col_widths[col] = max(col_widths[col], len(format_value(val)))
+                formatted = format_value(val)
+                col_widths[col] = min(max(col_widths[col], len(formatted)), 20)
 
         # Build table
         table_lines = []
 
         # Header
-        header = " | ".join(col.ljust(col_widths[col]) for col in columns)
+        header = " | ".join(col[:col_widths[col]].ljust(col_widths[col]) for col in columns)
         table_lines.append(header)
         table_lines.append("-" * len(header))
 
         # Rows
         for row in page_rows:
-            row_str = " | ".join(format_value(val).ljust(col_widths[col]) for col, val in zip(columns, row))
+            formatted_vals = [format_value(val)[:col_widths[col]].ljust(col_widths[col]) for col, val in zip(columns, row)]
+            row_str = " | ".join(formatted_vals)
             table_lines.append(row_str)
 
-        # Add as code block to preserve formatting
-        table_text = "```\n" + "\n".join(table_lines) + "\n```"
+        return "```\n" + "\n".join(table_lines) + "\n```"
 
-        embed.description = f"Page {self.current_page + 1} of {self.total_pages}\n{table_text}"
-
+    def get_embed(self):
+        """Just shows page controls, table sent separately"""
+        embed = discord.Embed(
+            title="",
+            description=f"**Page {self.current_page + 1} of {self.total_pages}**",
+            color=discord.Color.blue()
+        )
         return embed
 
     @discord.ui.button(label="◀ Previous", style=discord.ButtonStyle.gray)
     async def previous_button(self, interaction: discord.Interaction, button: Button):
         if self.current_page > 0:
             self.current_page -= 1
+            # Edit both the table message and embed
+            await self.table_message.edit(content=self.format_table_page())
             await interaction.response.edit_message(embed=self.get_embed(), view=self)
         else:
             await interaction.response.defer()
@@ -83,6 +86,8 @@ class PaginatedDataView(View):
     async def next_button(self, interaction: discord.Interaction, button: Button):
         if self.current_page < self.total_pages - 1:
             self.current_page += 1
+            # Edit both the table message and embed
+            await self.table_message.edit(content=self.format_table_page())
             await interaction.response.edit_message(embed=self.get_embed(), view=self)
         else:
             await interaction.response.defer()
@@ -176,15 +181,13 @@ class GradCafeBotWithLLM(discord.Client):
                 # Beatriz responds directly
                 response_text, query_result = await asyncio.to_thread(query_llm, user_question, recent_messages)
 
-                # If too many results, skip summary and just show data
+                # If too many results, skip detailed summary and just describe columns
                 if query_result and not query_result.get('error') and query_result.get('rows'):
                     row_count = len(query_result['rows'])
 
                     if row_count > 4:
-                        # Too many rows - defer to embed instead of summarizing
-                        columns = query_result['columns']
-                        column_desc = ', '.join(columns)
-                        response_text = f"I found {row_count} results. Columns: {column_desc}. Browse the data below."
+                        # Too many rows - get Beatriz to describe the columns
+                        response_text = await asyncio.to_thread(describe_query_results, user_question, query_result)
 
                     # Send response
                     if len(response_text) > 2000:
@@ -192,8 +195,12 @@ class GradCafeBotWithLLM(discord.Client):
 
                     await message.channel.send(response_text)
 
-                    # Send paginated data embed
+                    # Send table and paginated controls
                     view = PaginatedDataView(query_result, rows_per_page=5)
+                    # Send table as regular message
+                    table_msg = await message.channel.send(view.format_table_page())
+                    view.table_message = table_msg
+                    # Send embed with pagination buttons
                     await message.channel.send(embed=view.get_embed(), view=view)
                 else:
                     # No query results - just send text response
