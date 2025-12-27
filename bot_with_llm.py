@@ -1,10 +1,72 @@
 import discord
 from discord.ext import tasks
+from discord.ui import View, Button
 import os
 import asyncio
 from database import init_database, get_unposted_postings, mark_posting_as_posted, format_posting_for_discord, refresh_aggregation_tables
 from scraper import fetch_and_store_new_postings
 from llm_interface import query_llm, get_last_sql_query
+
+class PaginatedDataView(View):
+    def __init__(self, query_result, rows_per_page=5):
+        super().__init__(timeout=300)  # 5 minute timeout
+        self.query_result = query_result
+        self.rows_per_page = rows_per_page
+        self.current_page = 0
+        self.total_pages = (len(query_result['rows']) + rows_per_page - 1) // rows_per_page
+
+        # Disable buttons if only one page
+        if self.total_pages <= 1:
+            self.previous_button.disabled = True
+            self.next_button.disabled = True
+
+    def get_embed(self):
+        start_idx = self.current_page * self.rows_per_page
+        end_idx = min(start_idx + self.rows_per_page, len(self.query_result['rows']))
+
+        embed = discord.Embed(
+            title="Query Results",
+            description=f"Page {self.current_page + 1} of {self.total_pages}",
+            color=discord.Color.blue()
+        )
+
+        # Add column headers
+        columns = self.query_result['columns']
+
+        # Format rows
+        for i, row in enumerate(self.query_result['rows'][start_idx:end_idx], start=start_idx + 1):
+            row_data = []
+            for col, val in zip(columns, row):
+                if val is None:
+                    row_data.append(f"**{col}**: N/A")
+                elif isinstance(val, float):
+                    row_data.append(f"**{col}**: {val:.2f}")
+                else:
+                    row_data.append(f"**{col}**: {val}")
+
+            embed.add_field(
+                name=f"Row {i}",
+                value="\n".join(row_data),
+                inline=False
+            )
+
+        return embed
+
+    @discord.ui.button(label="◀ Previous", style=discord.ButtonStyle.gray)
+    async def previous_button(self, interaction: discord.Interaction, button: Button):
+        if self.current_page > 0:
+            self.current_page -= 1
+            await interaction.response.edit_message(embed=self.get_embed(), view=self)
+        else:
+            await interaction.response.defer()
+
+    @discord.ui.button(label="Next ▶", style=discord.ButtonStyle.gray)
+    async def next_button(self, interaction: discord.Interaction, button: Button):
+        if self.current_page < self.total_pages - 1:
+            self.current_page += 1
+            await interaction.response.edit_message(embed=self.get_embed(), view=self)
+        else:
+            await interaction.response.defer()
 
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
 DISCORD_CHANNEL_ID = int(os.getenv('DISCORD_CHANNEL_ID', '0'))
@@ -93,13 +155,32 @@ class GradCafeBotWithLLM(discord.Client):
                     print(f"Failed to fetch recent channel context: {e}")
 
                 # Beatriz responds directly
-                response_text = await asyncio.to_thread(query_llm, user_question, recent_messages)
+                response_text, query_result = await asyncio.to_thread(query_llm, user_question, recent_messages)
 
-                # Send response
-                if len(response_text) > 2000:
-                    response_text = response_text[:1997] + "..."
+                # If too many results, skip summary and just show data
+                if query_result and not query_result.get('error') and query_result.get('rows'):
+                    row_count = len(query_result['rows'])
 
-                await message.channel.send(response_text)
+                    if row_count > 4:
+                        # Too many rows - defer to embed instead of summarizing
+                        columns = query_result['columns']
+                        column_desc = ', '.join(columns)
+                        response_text = f"I found {row_count} results. Columns: {column_desc}. Browse the data below."
+
+                    # Send response
+                    if len(response_text) > 2000:
+                        response_text = response_text[:1997] + "..."
+
+                    await message.channel.send(response_text)
+
+                    # Send paginated data embed
+                    view = PaginatedDataView(query_result, rows_per_page=5)
+                    await message.channel.send(embed=view.get_embed(), view=view)
+                else:
+                    # No query results - just send text response
+                    if len(response_text) > 2000:
+                        response_text = response_text[:1997] + "..."
+                    await message.channel.send(response_text)
 
             except Exception as e:
                 await message.channel.send(f"Sorry, I encountered an error: {str(e)[:200]}")

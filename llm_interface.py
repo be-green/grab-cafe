@@ -393,7 +393,7 @@ Response: REQUEST_DATA: I need a count of interview invitations by school, order
     def query(self, user_question: str, recent_messages: list):
         """
         Main query method: Beatriz orchestrates the entire workflow.
-        Returns: final_response
+        Returns: (final_response, query_results)
         """
         print(f"Question: {user_question}")
 
@@ -406,7 +406,7 @@ Response: REQUEST_DATA: I need a count of interview invitations by school, order
         if not needs_data:
             # Beatriz answered directly - no SQL query
             self.last_sql_query = None
-            return response_or_request
+            return response_or_request, None
 
         # Step 2: Beatriz needs data - send her request to Gary
         data_request = response_or_request
@@ -416,7 +416,7 @@ Response: REQUEST_DATA: I need a count of interview invitations by school, order
         sql_query = self._extract_sql(sql_response)
         if not sql_query or sql_response.strip().lower() == "none":
             self.last_sql_query = None
-            return "I couldn't generate a valid SQL query for that request. Could you rephrase your question?"
+            return "I couldn't generate a valid SQL query for that request. Could you rephrase your question?", None
 
         # Store the SQL query
         self.last_sql_query = sql_query
@@ -427,7 +427,7 @@ Response: REQUEST_DATA: I need a count of interview invitations by school, order
 
         # Step 4: Beatriz interprets the results and formulates final response
         final_response = self.summarize_results(user_question, data_request, sql_query, result, recent_messages)
-        return final_response
+        return final_response, result
 
     def summarize_results(self, user_question: str, data_request: str, sql_query: str, query_result: dict, recent_messages: list) -> str:
         """Beatriz interprets SQL results and formulates the final response."""
@@ -690,7 +690,7 @@ def get_llm():
 def query_llm(question: str, recent_messages: list = None):
     """
     Main interface for querying the LLM.
-    Returns: text_response
+    Returns: (text_response, query_results)
     """
     llm = get_llm()
     return llm.query(question, recent_messages or [])
