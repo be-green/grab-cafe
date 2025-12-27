@@ -46,6 +46,12 @@ class OpenRouterLLM:
         )
         response.raise_for_status()
         data = response.json()
+
+        # Check if response was truncated
+        finish_reason = data["choices"][0].get("finish_reason")
+        if finish_reason == "length":
+            print(f"WARNING: Response truncated due to token limit (max_tokens={max_tokens})")
+
         return data["choices"][0]["message"]["content"]
 
     def _format_recent_context(self, recent_messages: list) -> str:
@@ -144,8 +150,8 @@ A: SELECT strftime('%Y-%m', decision_date) as month, COUNT(*) as count FROM phd 
 Q: What's the average GRE for PhD students accepted to MIT?
 A: SELECT AVG(gre) FROM phd WHERE result = 'Accepted' AND LOWER(school) LIKE LOWER('%MIT%') AND gre IS NOT NULL
 
-Q: Compare acceptance rates at top schools
-A: SELECT school, SUM(CASE WHEN result = 'Accepted' THEN 1 ELSE 0 END) * 100.0 / COUNT(*) as acceptance_rate FROM phd GROUP BY school HAVING COUNT(*) > 10 ORDER BY acceptance_rate DESC LIMIT 10
+Q: Compare acceptance stats across top 5 programs
+A: SELECT CASE WHEN LOWER(school) LIKE '%harvard%' THEN 'Harvard' WHEN LOWER(school) LIKE '%mit%' THEN 'MIT' WHEN LOWER(school) LIKE '%stanford%' THEN 'Stanford' WHEN LOWER(school) LIKE '%berkeley%' THEN 'Berkeley' WHEN LOWER(school) LIKE '%chicago%' THEN 'Chicago' END AS school_name, COUNT(*) as accepted_count, AVG(gpa) as avg_gpa, AVG(gre) as avg_gre FROM phd WHERE result = 'Accepted' AND (LOWER(school) LIKE '%harvard%' OR LOWER(school) LIKE '%mit%' OR LOWER(school) LIKE '%stanford%' OR LOWER(school) LIKE '%berkeley%' OR LOWER(school) LIKE '%chicago%') GROUP BY school_name
 
 Q: When was the most recent acceptance at Stanford?
 A: SELECT school, decision_date FROM phd WHERE LOWER(school) LIKE LOWER('%Stanford%') AND result = 'Accepted' AND decision_date IS NOT NULL ORDER BY decision_date DESC LIMIT 1
@@ -431,7 +437,7 @@ Response: REQUEST_DATA: I need a count of interview invitations by school, order
         rows = query_result['rows']
         columns = query_result['columns']
         row_count = query_result.get('row_count', len(rows))
-        sample_rows = rows[:20]
+        sample_rows = rows[:10]  # Reduced to prevent prompt bloat with wide result sets
         recent_context = self._format_recent_context(recent_messages)
 
         prompt = f"""OPERATIONAL CONTEXT:
@@ -515,8 +521,9 @@ Gary's SQL query: {sql_query}
 
 Data Gary retrieved:
 Columns: {columns}
-Row count: {row_count}
-Rows (first {len(sample_rows)}): {sample_rows}
+Total rows: {row_count}
+{'Showing first ' + str(len(sample_rows)) + ' rows (results truncated for brevity)' if row_count > len(sample_rows) else 'All rows'}:
+{sample_rows}
 
 Your task: SUMMARIZE this data in natural prose to answer the user's question.
 
@@ -614,6 +621,10 @@ Be conversational and informative, not mechanical."""
         ]
 
         try:
+            # Log prompt size for debugging
+            prompt_chars = len(prompt)
+            print(f"Summarization prompt size: {prompt_chars} chars (~{prompt_chars//4} tokens)")
+
             response = self._chat_completion(
                 OPENROUTER_SUMMARY_MODEL,
                 messages,
