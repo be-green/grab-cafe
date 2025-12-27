@@ -30,25 +30,44 @@ class PaginatedDataView(View):
             color=discord.Color.blue()
         )
 
-        # Add column headers
         columns = self.query_result['columns']
+        page_rows = self.query_result['rows'][start_idx:end_idx]
 
-        # Format rows
-        for i, row in enumerate(self.query_result['rows'][start_idx:end_idx], start=start_idx + 1):
-            row_data = []
+        # Format data for table
+        def format_value(val):
+            if val is None:
+                return "N/A"
+            elif isinstance(val, float):
+                return f"{val:.2f}"
+            else:
+                return str(val)
+
+        # Calculate column widths
+        col_widths = {}
+        for col in columns:
+            col_widths[col] = len(col)
+
+        for row in page_rows:
             for col, val in zip(columns, row):
-                if val is None:
-                    row_data.append(f"**{col}**: N/A")
-                elif isinstance(val, float):
-                    row_data.append(f"**{col}**: {val:.2f}")
-                else:
-                    row_data.append(f"**{col}**: {val}")
+                col_widths[col] = max(col_widths[col], len(format_value(val)))
 
-            embed.add_field(
-                name=f"Row {i}",
-                value="\n".join(row_data),
-                inline=False
-            )
+        # Build table
+        table_lines = []
+
+        # Header
+        header = " | ".join(col.ljust(col_widths[col]) for col in columns)
+        table_lines.append(header)
+        table_lines.append("-" * len(header))
+
+        # Rows
+        for row in page_rows:
+            row_str = " | ".join(format_value(val).ljust(col_widths[col]) for col, val in zip(columns, row))
+            table_lines.append(row_str)
+
+        # Add as code block to preserve formatting
+        table_text = "```\n" + "\n".join(table_lines) + "\n```"
+
+        embed.description = f"Page {self.current_page + 1} of {self.total_pages}\n{table_text}"
 
         return embed
 
