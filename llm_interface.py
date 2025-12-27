@@ -136,7 +136,7 @@ Q: What are the top 5 schools with the most PhD acceptances?
 A: SELECT school, COUNT(*) as acceptance_count FROM phd WHERE result = 'Accepted' GROUP BY school ORDER BY acceptance_count DESC LIMIT 5
 
 Q: What is the average GPA of accepted PhD students?
-A: SELECT AVG(gpa) FROM phd WHERE result = 'Accepted' AND gpa BETWEEN 1.0 AND 4.0
+A: SELECT AVG(gpa) FROM phd WHERE result = 'Accepted' AND gpa BETWEEN 1.0 AND 4.0 AND gre BETWEEN 130 AND 170
 
 Q: Which schools send the most PhD interview invitations?
 A: SELECT school, COUNT(*) as interview_count FROM phd WHERE result = 'Interview' GROUP BY school ORDER BY interview_count DESC LIMIT 10
@@ -148,7 +148,7 @@ Q: Show PhD acceptance trends by month
 A: SELECT strftime('%Y-%m', decision_date) as month, COUNT(*) as count FROM phd WHERE result = 'Accepted' AND decision_date IS NOT NULL GROUP BY month ORDER BY month
 
 Q: What's the average GRE for PhD students accepted to MIT?
-A: SELECT AVG(gre) FROM phd WHERE result = 'Accepted' AND LOWER(school) LIKE LOWER('%MIT%') AND gre BETWEEN 130 AND 170
+A: SELECT AVG(gre) FROM phd WHERE result = 'Accepted' AND LOWER(school) LIKE LOWER('%MIT%') AND gpa BETWEEN 1.0 AND 4.0 AND gre BETWEEN 130 AND 170
 
 Q: Compare acceptance stats across top 5 programs
 A: SELECT CASE WHEN LOWER(school) LIKE '%harvard%' THEN 'Harvard' WHEN LOWER(school) LIKE '%mit%' THEN 'MIT' WHEN LOWER(school) LIKE '%stanford%' THEN 'Stanford' WHEN LOWER(school) LIKE '%berkeley%' THEN 'Berkeley' WHEN LOWER(school) LIKE '%chicago%' THEN 'Chicago' END AS school_name, COUNT(*) as accepted_count, AVG(gpa) as avg_gpa, AVG(gre) as avg_gre FROM phd WHERE result = 'Accepted' AND (LOWER(school) LIKE '%harvard%' OR LOWER(school) LIKE '%mit%' OR LOWER(school) LIKE '%stanford%' OR LOWER(school) LIKE '%berkeley%' OR LOWER(school) LIKE '%chicago%') AND gpa BETWEEN 1.0 AND 4.0 AND gre BETWEEN 130 AND 170 GROUP BY school_name
@@ -166,7 +166,7 @@ Q: How do my stats (3.5 GPA, 165 GRE) compare to Yale acceptances?
 A: SELECT AVG(gpa) as avg_gpa, AVG(gre) as avg_gre, MIN(gpa) as min_gpa, MAX(gpa) as max_gpa, MIN(gre) as min_gre, MAX(gre) as max_gre FROM phd WHERE LOWER(school) LIKE LOWER('%Yale%') AND result = 'Accepted' AND gpa BETWEEN 1.0 AND 4.0 AND gre BETWEEN 130 AND 170
 
 Q: Which schools accept students with GPAs below 3.5?
-A: SELECT DISTINCT school FROM phd WHERE result = 'Accepted' AND gpa < 3.5 AND gpa >= 1.0 ORDER BY school
+A: SELECT DISTINCT school FROM phd WHERE result = 'Accepted' AND gpa < 3.5 AND gpa >= 1.0 AND gre BETWEEN 130 AND 170 ORDER BY school
 
 Q: What are acceptance rates by school?
 A: SELECT school, SUM(CASE WHEN result = 'Accepted' THEN 1 ELSE 0 END) * 100.0 / COUNT(*) as acceptance_rate, COUNT(*) as total_results FROM phd GROUP BY school HAVING COUNT(*) > 5 ORDER BY acceptance_rate DESC
@@ -437,7 +437,7 @@ Response: REQUEST_DATA: I need a count of interview invitations by school, order
         rows = query_result['rows']
         columns = query_result['columns']
         row_count = query_result.get('row_count', len(rows))
-        sample_rows = rows[:10]  # Reduced to prevent prompt bloat with wide result sets
+        sample_rows = rows[:5]  # Reduced to prevent prompt bloat with wide result sets
         recent_context = self._format_recent_context(recent_messages)
 
         prompt = f"""OPERATIONAL CONTEXT:
@@ -490,25 +490,11 @@ CORRECT response: "February sees the most activity with 1,847 acceptances, follo
 WRONG response: "Most acceptances come out in:\n- February: 1847\n- March: 1523\n- January: 892"
 
 Example 6:
-User question: "What's the acceptance rate at top programs?"
-Data columns: ['school', 'total_applications', 'acceptances', 'acceptance_rate']
-Data rows: [['Harvard University', 145, 12, 8.3], ['MIT', 178, 19, 10.7], ['Stanford University', 201, 24, 11.9], ['Princeton University', 134, 18, 13.4]]
-CORRECT response: "Among elite programs, acceptance rates hover between 8% and 13%. Harvard is most selective at 8.3%, followed by MIT and Stanford."
-WRONG response: "Here are the acceptance rates:\n\nHarvard University: 8.3% (12/145)\nMIT: 10.7% (19/178)\nStanford University: 11.9% (24/201)\nPrincton University: 13.4% (18/134)"
-
-Example 7:
 User question: "Compare GPAs for accepted vs rejected students at MIT"
 Data columns: ['result', 'count', 'avg_gpa', 'min_gpa', 'max_gpa']
 Data rows: [['Accepted', 45, 3.89, 3.65, 4.0], ['Interview', 32, 3.82, 3.55, 4.0], ['Rejected', 18, 3.58, 3.1, 3.85]]
 CORRECT response: "At MIT, accepted students averaged 3.89 GPA compared to 3.58 for rejected applicants. Interview invitations went to candidates averaging 3.82. The pattern is clear."
 WRONG response: "Accepted:\n- Count: 45\n- Average GPA: 3.89\n- Range: 3.65-4.0\n\nInterview:\n- Count: 32\n- Average GPA: 3.82\n- Range: 3.55-4.0\n\nRejected:\n- Count: 18\n- Average GPA: 3.58\n- Range: 3.1-3.85"
-
-Example 8:
-User question: "How do applicants with GPAs below 3.6 perform at Stanford compared to the overall pool?"
-Data columns: ['overall_total', 'overall_accepted', 'overall_acceptance_rate', 'overall_avg_gpa', 'overall_avg_gre', 'low_gpa_total', 'low_gpa_accepted', 'low_gpa_acceptance_rate', 'low_gpa_avg_gpa', 'low_gpa_avg_gre']
-Data rows: [[145, 18, 12.4, 3.84, 167.2, 23, 1, 4.3, 3.42, 165.1]]
-CORRECT response: "Stanford's overall acceptance rate is 12.4% across 145 applicants. For the 23 applicants with GPAs below 3.6, only one was accepted, yielding a 4.3% acceptance rate. The low-GPA cohort averaged 3.42 GPA and 165 GRE, compared to 3.84 and 167 overall."
-WRONG response: "Overall pool:\n- Total: 145\n- Accepted: 18\n- Acceptance rate: 12.4%\n- Avg GPA: 3.84\n- Avg GRE: 167.2\n\nLow GPA pool (< 3.6):\n- Total: 23\n- Accepted: 1\n- Acceptance rate: 4.3%\n- Avg GPA: 3.42\n- Avg GRE: 165.1"
 
 Recent channel context (most recent last):
 {recent_context}
@@ -527,8 +513,14 @@ Total rows: {row_count}
 
 Your task: SUMMARIZE this data in natural prose to answer the user's question.
 
-Follow the pattern shown in the worked examples above. Transform raw data into flowing sentences.
-DO NOT list individual rows. DO NOT use pipe separators. DO NOT format as a list.
+CRITICAL - READ THIS:
+- NO tables, NO markdown tables, NO formatted data structures
+- NO lists, NO bullet points, NO numbered items, NO pipe separators (|)
+- ONLY natural prose sentences with periods and commas
+- The data will be shown to the user separately - you don't need to display it
+- Transform raw data into flowing narrative sentences like the examples above
+
+Follow the CORRECT response patterns in the worked examples above.
 Describe patterns, highlight key findings, and synthesize the information.
 Be conversational and informative, not mechanical."""
 
@@ -550,8 +542,10 @@ Be conversational and informative, not mechanical."""
                     "\n\n"
                     "FORBIDDEN FORMATTING - READ THIS FIRST:\n"
                     "NEVER use bullet points, dashes, asterisks, or lists. NEVER use markdown formatting. "
-                    "Librarians speak in sentences, not lists. The archive doesn't format—it states facts. "
-                    "Write in plain prose only. Use periods and commas. If you start a list, you have failed. "
+                    "NEVER create tables or use pipe separators (|). NO markdown tables. "
+                    "Librarians speak in sentences, not lists or tables. The archive doesn't format—it states facts. "
+                    "Write in plain prose only. Use periods and commas. If you start a list or table, you have failed. "
+                    "The data will be displayed separately to the user - you just provide the narrative summary. "
                     "\n\n"
                     "WRONG: '- MIT: 3.8 GPA\\n- Harvard: 3.9 GPA'\n"
                     "RIGHT: 'MIT averaged 3.8 GPA, Harvard 3.9.'\n"
@@ -629,7 +623,7 @@ Be conversational and informative, not mechanical."""
                 OPENROUTER_SUMMARY_MODEL,
                 messages,
                 temperature=0.2,
-                max_tokens=700
+                max_tokens=800
             )
             final_response = response.strip() or self.format_results(user_question, query_result)
             print(f"Beatriz's full response ({len(final_response)} chars): {final_response}")
@@ -725,7 +719,7 @@ Your description:"""
         OPENROUTER_SUMMARY_MODEL,
         messages,
         temperature=0.3,
-        max_tokens=150
+        max_tokens=300
     )
 
     return response.strip()
