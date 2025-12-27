@@ -181,7 +181,7 @@ class GradCafeBotWithLLM(discord.Client):
                 # Beatriz responds directly
                 response_text, query_result = await asyncio.to_thread(query_llm, user_question, recent_messages)
 
-                # If too many results, skip detailed summary and just describe columns
+                # Handle query results
                 if query_result and not query_result.get('error') and query_result.get('rows'):
                     row_count = len(query_result['rows'])
 
@@ -189,19 +189,23 @@ class GradCafeBotWithLLM(discord.Client):
                         # Too many rows - get Beatriz to describe the columns
                         response_text = await asyncio.to_thread(describe_query_results, user_question, query_result)
 
-                    # Send response
-                    if len(response_text) > 2000:
-                        response_text = response_text[:1997] + "..."
+                        # Send response
+                        if len(response_text) > 2000:
+                            response_text = response_text[:1997] + "..."
+                        await message.channel.send(response_text)
 
-                    await message.channel.send(response_text)
-
-                    # Send table and paginated controls
-                    view = PaginatedDataView(query_result, rows_per_page=5)
-                    # Send table as regular message
-                    table_msg = await message.channel.send(view.format_table_page())
-                    view.table_message = table_msg
-                    # Send embed with pagination buttons
-                    await message.channel.send(embed=view.get_embed(), view=view)
+                        # Send table and paginated controls
+                        view = PaginatedDataView(query_result, rows_per_page=5)
+                        # Send table as regular message
+                        table_msg = await message.channel.send(view.format_table_page())
+                        view.table_message = table_msg
+                        # Send embed with pagination buttons
+                        await message.channel.send(embed=view.get_embed(), view=view)
+                    else:
+                        # 4 or fewer rows - just send Beatriz's summary, no table
+                        if len(response_text) > 2000:
+                            response_text = response_text[:1997] + "..."
+                        await message.channel.send(response_text)
                 else:
                     # No query results - just send text response
                     if len(response_text) > 2000:
