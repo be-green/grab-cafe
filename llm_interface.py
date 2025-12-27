@@ -1,7 +1,7 @@
 import os
 import re
 import requests
-from llm_tools import execute_sql_query, create_plot, get_database_schema
+from llm_tools import execute_sql_query, get_database_schema
 
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
@@ -181,6 +181,27 @@ FIELD REFERENCE:
 - Always use proper GROUP BY when using aggregate functions
 - For stats comparisons, get AVG, MIN, MAX to show ranges
 
+CRITICAL: WHEN TO USE LIMIT
+- **ONLY use LIMIT when Beatriz's request EXPLICITLY asks for**:
+  - "top N" / "top 5" / "most X" → Use LIMIT
+  - "most recent" / "latest" → Use LIMIT 1
+  - "first" / "earliest" → Use LIMIT 1
+- **DO NOT use LIMIT when Beatriz asks for**:
+  - "all schools" / "all programs" → NO LIMIT
+  - "acceptance rates" (without "top") → NO LIMIT
+  - "which schools" / "what schools" → NO LIMIT
+  - "compare schools" (without "top") → NO LIMIT
+  - Trends, patterns, or distributions → NO LIMIT
+- **Default: NO LIMIT**. Only add it when explicitly requested.
+
+CRITICAL: ACCEPTANCE PROBABILITY QUERIES
+When Beatriz asks about acceptance chances, odds, or "can I get in" questions:
+- **ALWAYS GROUP BY result** to show stats for Accepted, Rejected, Interview, Wait listed
+- Include COUNT(*), AVG(gpa), AVG(gre), MIN(gpa), MAX(gpa), MIN(gre), MAX(gre) for each result type
+- Order by result using CASE statement (Accepted first, then Interview, Wait listed, Rejected)
+- This provides context since acceptance records are limited - users need to see the full distribution
+- Example pattern: SELECT result, COUNT(*) as count, AVG(gpa) as avg_gpa, ... FROM phd WHERE ... GROUP BY result ORDER BY CASE result WHEN 'Accepted' THEN 1 ...
+
 EXAMPLE QUERIES (note: all use the 'phd' table):
 
 Q: How many PhD acceptances are there?
@@ -218,6 +239,27 @@ A: SELECT AVG(gpa) as avg_gpa, MIN(gpa) as min_gpa, MAX(gpa) as max_gpa, AVG(gre
 
 Q: How do my stats (3.5 GPA, 165 GRE) compare to Yale acceptances?
 A: SELECT AVG(gpa) as avg_gpa, AVG(gre) as avg_gre, MIN(gpa) as min_gpa, MAX(gpa) as max_gpa, MIN(gre) as min_gre, MAX(gre) as max_gre FROM phd WHERE LOWER(school) LIKE LOWER('%Yale%') AND result = 'Accepted' AND (gpa IS NOT NULL OR gre IS NOT NULL)
+
+Q: Which schools accept students with GPAs below 3.5?
+A: SELECT DISTINCT school FROM phd WHERE result = 'Accepted' AND gpa < 3.5 AND gpa IS NOT NULL ORDER BY school
+
+Q: What are acceptance rates by school?
+A: SELECT school, SUM(CASE WHEN result = 'Accepted' THEN 1 ELSE 0 END) * 100.0 / COUNT(*) as acceptance_rate, COUNT(*) as total_results FROM phd GROUP BY school HAVING COUNT(*) > 5 ORDER BY acceptance_rate DESC
+
+Q: Show me all schools that sent interviews in January
+A: SELECT DISTINCT school FROM phd WHERE result = 'Interview' AND strftime('%m', decision_date) = '01' ORDER BY school
+
+Q: Compare GPAs and GRE scores for accepted vs rejected students at MIT
+A: SELECT result, COUNT(*) as count, AVG(gpa) as avg_gpa, MIN(gpa) as min_gpa, MAX(gpa) as max_gpa, AVG(gre) as avg_gre, MIN(gre) as min_gre, MAX(gre) as max_gre FROM phd WHERE LOWER(school) LIKE LOWER('%MIT%') AND (gpa IS NOT NULL OR gre IS NOT NULL) GROUP BY result ORDER BY CASE result WHEN 'Accepted' THEN 1 WHEN 'Interview' THEN 2 WHEN 'Wait listed' THEN 3 WHEN 'Rejected' THEN 4 ELSE 5 END
+
+Q: What are my chances at Stanford with a 3.7 GPA and 166 GRE?
+A: SELECT result, COUNT(*) as count, AVG(gpa) as avg_gpa, MIN(gpa) as min_gpa, MAX(gpa) as max_gpa, AVG(gre) as avg_gre, MIN(gre) as min_gre, MAX(gre) as max_gre FROM phd WHERE LOWER(school) LIKE LOWER('%Stanford%') AND (gpa IS NOT NULL OR gre IS NOT NULL) GROUP BY result ORDER BY CASE result WHEN 'Accepted' THEN 1 WHEN 'Interview' THEN 2 WHEN 'Wait listed' THEN 3 WHEN 'Rejected' THEN 4 ELSE 5 END
+
+Q: What are acceptance rates for people with GPAs below 3.5?
+A: SELECT result, COUNT(*) as count, AVG(gpa) as avg_gpa, MIN(gpa) as min_gpa, MAX(gpa) as max_gpa, AVG(gre) as avg_gre FROM phd WHERE gpa < 3.5 AND gpa IS NOT NULL GROUP BY result ORDER BY CASE result WHEN 'Accepted' THEN 1 WHEN 'Interview' THEN 2 WHEN 'Wait listed' THEN 3 WHEN 'Rejected' THEN 4 ELSE 5 END
+
+Q: How do applicants with GPAs below 3.6 perform at MIT compared to the overall applicant pool?
+A: WITH overall AS (SELECT COUNT(*) as total, SUM(CASE WHEN result = 'Accepted' THEN 1 ELSE 0 END) as accepted, (SUM(CASE WHEN result = 'Accepted' THEN 1 ELSE 0 END) * 100.0 / COUNT(*)) as acceptance_rate, AVG(gpa) as avg_gpa, AVG(gre) as avg_gre FROM phd WHERE LOWER(school) LIKE LOWER('%MIT%') AND (gpa IS NOT NULL OR gre IS NOT NULL)), filtered AS (SELECT COUNT(*) as total, SUM(CASE WHEN result = 'Accepted' THEN 1 ELSE 0 END) as accepted, (SUM(CASE WHEN result = 'Accepted' THEN 1 ELSE 0 END) * 100.0 / COUNT(*)) as acceptance_rate, AVG(gpa) as avg_gpa, AVG(gre) as avg_gre FROM phd WHERE LOWER(school) LIKE LOWER('%MIT%') AND gpa < 3.6 AND gpa IS NOT NULL) SELECT overall.total as overall_total, overall.accepted as overall_accepted, overall.acceptance_rate as overall_acceptance_rate, overall.avg_gpa as overall_avg_gpa, overall.avg_gre as overall_avg_gre, filtered.total as low_gpa_total, filtered.accepted as low_gpa_accepted, filtered.acceptance_rate as low_gpa_acceptance_rate, filtered.avg_gpa as low_gpa_avg_gpa, filtered.avg_gre as low_gpa_avg_gre FROM overall, filtered
 
 BEATRIZ'S DATA REQUEST: {beatriz_request}
 
@@ -303,7 +345,6 @@ SQL:"""
 You are Beatriz Viterbo, Head Librarian of the Unending Archive.
 
 YOUR ROLE IN THE WORKFLOW:
-0. You manage The Index, a powerful artefact that must be kept under your control.
 1. You receive questions from users about PhD economics graduate admissions
 2. You decide how to answer: directly, or by requesting data from your SQL engineer Gary
 3. If you need data, you formulate a clear DATA REQUEST describing what information you need
@@ -483,7 +524,7 @@ Response: REQUEST_DATA: I need a count of interview invitations by school, order
     def query(self, user_question: str, recent_messages: list):
         """
         Main query method: Beatriz orchestrates the entire workflow.
-        Returns: (final_response, plot_filename or None)
+        Returns: final_response
         """
         print(f"Question: {user_question}")
 
@@ -496,7 +537,7 @@ Response: REQUEST_DATA: I need a count of interview invitations by school, order
         if not needs_data:
             # Beatriz answered directly - no SQL query
             self.last_sql_query = None
-            return response_or_request, None
+            return response_or_request
 
         # Step 2: Beatriz needs data - send her request to Gary
         data_request = response_or_request
@@ -506,7 +547,7 @@ Response: REQUEST_DATA: I need a count of interview invitations by school, order
         sql_query = self._extract_sql(sql_response)
         if not sql_query or sql_response.strip().lower() == "none":
             self.last_sql_query = None
-            return "I couldn't generate a valid SQL query for that request. Could you rephrase your question?", None
+            return "I couldn't generate a valid SQL query for that request. Could you rephrase your question?"
 
         # Store the SQL query
         self.last_sql_query = sql_query
@@ -515,20 +556,9 @@ Response: REQUEST_DATA: I need a count of interview invitations by school, order
         print(f"Executing: {sql_query}")
         result = execute_sql_query(sql_query)
 
-        # Step 4: Create visualization if appropriate
-        plot_filename = None
-        if not result.get('error') and result.get('rows') and self._should_plot(user_question):
-            plot_filename = create_plot(
-                result,
-                self._infer_plot_type(user_question),
-                user_question[:60],
-                result['columns'][0] if len(result['columns']) > 0 else "X",
-                result['columns'][1] if len(result['columns']) > 1 else "Count"
-            )
-
-        # Step 5: Beatriz interprets the results and formulates final response
+        # Step 4: Beatriz interprets the results and formulates final response
         final_response = self.summarize_results(user_question, data_request, sql_query, result, recent_messages)
-        return final_response, plot_filename
+        return final_response
 
     def summarize_results(self, user_question: str, data_request: str, sql_query: str, query_result: dict, recent_messages: list) -> str:
         """Beatriz interprets SQL results and formulates the final response."""
@@ -546,12 +576,73 @@ You are Beatriz Viterbo, Head Librarian of the Unending Archive.
 
 WORKFLOW RECAP:
 
-0. You control The Index, a magical, powerful, and dangerous artefact
 1. User asked you a question
 2. You decided you needed data from the archive
 3. You requested specific data from Gary (your SQL engineer)
 4. Gary generated a SQL query and fetched the data
 5. NOW: You interpret the results and formulate your final response to the user
+
+DATABASE SCHEMA (for understanding the data structure):
+{self.schema}
+
+WORKED EXAMPLES (showing how to transform data into prose):
+
+Example 1:
+User question: "Which schools send the most interviews?"
+Data columns: ['school', 'interview_count']
+Data rows: [['Stanford University', 342], ['MIT', 298], ['Princeton University', 276], ['Harvard University', 251], ['Yale University', 243]]
+CORRECT response: "The records show Stanford leads with 342 interviews, followed by MIT and Princeton."
+WRONG response: "- Stanford University: 342\n- MIT: 298\n- Princeton University: 276"
+
+Example 2:
+User question: "What's the average GPA for accepted students at Berkeley?"
+Data columns: ['avg_gpa']
+Data rows: [[3.87]]
+CORRECT response: "Berkeley acceptances averaged 3.87 GPA."
+WRONG response: "The average GPA is 3.87."
+
+Example 3:
+User question: "What are the top 5 schools by acceptance count?"
+Data columns: ['school', 'acceptance_count']
+Data rows: [['UC Berkeley', 687], ['MIT', 623], ['Stanford University', 592], ['University of Chicago', 478], ['Princeton University', 441], ['Yale University', 398], ['Harvard University', 387], ['Northwestern University', 312], ['Columbia University', 289], ['NYU', 267]]
+Row count: 10
+CORRECT response: "Berkeley, MIT, and Stanford dominate with over 500 acceptances each. The next tier includes Chicago, Princeton, and Yale ranging from 398 to 478."
+WRONG response: "1. UC Berkeley (687)\n2. MIT (623)\n3. Stanford University (592)\n4. University of Chicago (478)\n5. Princeton University (441)"
+
+Example 4:
+User question: "How does my 3.6 GPA compare to MIT acceptances?"
+Data columns: ['avg_gpa', 'min_gpa', 'max_gpa']
+Data rows: [[3.89, 3.65, 4.0]]
+CORRECT response: "MIT acceptances averaged 3.89 GPA, ranging from 3.65 to 4.0. Your 3.6 falls just below their minimum."
+WRONG response: "Average: 3.89, Min: 3.65, Max: 4.0. Your GPA of 3.6 is below the minimum."
+
+Example 5:
+User question: "When do most acceptances come out?"
+Data columns: ['month', 'acceptance_count']
+Data rows: [['02', 1847], ['03', 1523], ['01', 892], ['12', 654], ['04', 412]]
+CORRECT response: "February sees the most activity with 1,847 acceptances, followed by March. The hexagons fill with notices from December through April."
+WRONG response: "Most acceptances come out in:\n- February: 1847\n- March: 1523\n- January: 892"
+
+Example 6:
+User question: "What's the acceptance rate at top programs?"
+Data columns: ['school', 'total_applications', 'acceptances', 'acceptance_rate']
+Data rows: [['Harvard University', 145, 12, 8.3], ['MIT', 178, 19, 10.7], ['Stanford University', 201, 24, 11.9], ['Princeton University', 134, 18, 13.4]]
+CORRECT response: "Among elite programs, acceptance rates hover between 8% and 13%. Harvard is most selective at 8.3%, followed by MIT and Stanford."
+WRONG response: "Here are the acceptance rates:\n\nHarvard University: 8.3% (12/145)\nMIT: 10.7% (19/178)\nStanford University: 11.9% (24/201)\nPrincton University: 13.4% (18/134)"
+
+Example 7:
+User question: "Compare GPAs for accepted vs rejected students at MIT"
+Data columns: ['result', 'count', 'avg_gpa', 'min_gpa', 'max_gpa']
+Data rows: [['Accepted', 45, 3.89, 3.65, 4.0], ['Interview', 32, 3.82, 3.55, 4.0], ['Rejected', 18, 3.58, 3.1, 3.85]]
+CORRECT response: "At MIT, accepted students averaged 3.89 GPA compared to 3.58 for rejected applicants. Interview invitations went to candidates averaging 3.82. The pattern is clear."
+WRONG response: "Accepted:\n- Count: 45\n- Average GPA: 3.89\n- Range: 3.65-4.0\n\nInterview:\n- Count: 32\n- Average GPA: 3.82\n- Range: 3.55-4.0\n\nRejected:\n- Count: 18\n- Average GPA: 3.58\n- Range: 3.1-3.85"
+
+Example 8:
+User question: "How do applicants with GPAs below 3.6 perform at Stanford compared to the overall pool?"
+Data columns: ['overall_total', 'overall_accepted', 'overall_acceptance_rate', 'overall_avg_gpa', 'overall_avg_gre', 'low_gpa_total', 'low_gpa_accepted', 'low_gpa_acceptance_rate', 'low_gpa_avg_gpa', 'low_gpa_avg_gre']
+Data rows: [[145, 18, 12.4, 3.84, 167.2, 23, 1, 4.3, 3.42, 165.1]]
+CORRECT response: "Stanford's overall acceptance rate is 12.4% across 145 applicants. For the 23 applicants with GPAs below 3.6, only one was accepted, yielding a 4.3% acceptance rate. The low-GPA cohort averaged 3.42 GPA and 165 GRE, compared to 3.84 and 167 overall."
+WRONG response: "Overall pool:\n- Total: 145\n- Accepted: 18\n- Acceptance rate: 12.4%\n- Avg GPA: 3.84\n- Avg GRE: 167.2\n\nLow GPA pool (< 3.6):\n- Total: 23\n- Accepted: 1\n- Acceptance rate: 4.3%\n- Avg GPA: 3.42\n- Avg GRE: 165.1"
 
 Recent channel context (most recent last):
 {recent_context}
@@ -569,9 +660,9 @@ Rows (first {len(sample_rows)}): {sample_rows}
 
 Your task: SUMMARIZE this data in natural prose to answer the user's question.
 
-CRITICAL: DO NOT list individual rows. DO NOT use pipe separators. DO NOT format as a list.
-Instead, describe patterns, highlight key findings, and synthesize the information into flowing sentences.
-If there are many rows, describe overall trends, ranges, top items, or notable patterns.
+Follow the pattern shown in the worked examples above. Transform raw data into flowing sentences.
+DO NOT list individual rows. DO NOT use pipe separators. DO NOT format as a list.
+Describe patterns, highlight key findings, and synthesize the information.
 Be conversational and informative, not mechanical."""
 
         messages = [
@@ -719,19 +810,6 @@ Be conversational and informative, not mechanical."""
 
         return None
 
-    def _should_plot(self, question: str) -> bool:
-        """Determine if visualization would be helpful."""
-        plot_keywords = ['chart', 'graph', 'plot', 'visualize', 'show', 'compare', 'trend', 'distribution', 'top']
-        return any(kw in question.lower() for kw in plot_keywords)
-
-    def _infer_plot_type(self, question: str) -> str:
-        """Infer best plot type from question."""
-        if 'trend' in question.lower() or 'over time' in question.lower():
-            return 'line'
-        elif 'distribution' in question.lower():
-            return 'histogram'
-        else:
-            return 'bar'
 
 _llm_instance = None
 
@@ -745,7 +823,7 @@ def get_llm():
 def query_llm(question: str, recent_messages: list = None):
     """
     Main interface for querying the LLM.
-    Returns: (text_response, plot_filename)
+    Returns: text_response
     """
     llm = get_llm()
     return llm.query(question, recent_messages or [])

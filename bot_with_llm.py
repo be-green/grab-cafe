@@ -17,6 +17,7 @@ class GradCafeBotWithLLM(discord.Client):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.llm_loaded = False
+        self.processed_messages = set()
 
     async def setup_hook(self):
         if not self.check_gradcafe_task.is_running():
@@ -43,6 +44,15 @@ class GradCafeBotWithLLM(discord.Client):
     async def on_message(self, message):
         if message.author == self.user:
             return
+
+        # Prevent processing the same message twice
+        if message.id in self.processed_messages:
+            return
+        self.processed_messages.add(message.id)
+
+        # Keep only last 100 message IDs to prevent memory growth
+        if len(self.processed_messages) > 100:
+            self.processed_messages = set(list(self.processed_messages)[-100:])
 
         if self.user.mentioned_in(message) and not message.mention_everyone:
             if not ENABLE_LLM or not self.llm_loaded:
@@ -84,18 +94,13 @@ class GradCafeBotWithLLM(discord.Client):
                     print(f"Failed to fetch recent channel context: {e}")
 
                 # Beatriz responds directly
-                response_text, plot_filename = await asyncio.to_thread(query_llm, user_question, recent_messages)
+                response_text = await asyncio.to_thread(query_llm, user_question, recent_messages)
 
                 # Send response
                 if len(response_text) > 2000:
                     response_text = response_text[:1997] + "..."
 
                 await message.channel.send(response_text)
-
-                if plot_filename and os.path.exists(plot_filename):
-                    with open(plot_filename, 'rb') as f:
-                        await message.channel.send(file=discord.File(f, plot_filename))
-                    os.remove(plot_filename)
 
             except Exception as e:
                 await message.channel.send(f"Sorry, I encountered an error: {str(e)[:200]}")
