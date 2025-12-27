@@ -2,7 +2,6 @@ import discord
 from discord.ext import tasks
 import os
 import asyncio
-import random
 from database import init_database, get_unposted_postings, mark_posting_as_posted, format_posting_for_discord, refresh_aggregation_tables
 from scraper import fetch_and_store_new_postings
 from llm_interface import query_llm, get_last_sql_query

@@ -19,87 +19,6 @@ class OpenRouterLLM:
         self.last_sql_query = None
         self.last_user_question = None
 
-    def _clean_and_validate_response(self, response: str) -> str:
-        """
-        Post-process Beatriz's response to strip formatting and detect off-topic content.
-        This is a fallback when prompting alone fails to prevent formatting/scope violations.
-        """
-        original_response = response
-
-        # Strip markdown formatting
-        response = re.sub(r'\*\*(.+?)\*\*', r'\1', response)  # Remove bold
-        response = re.sub(r'\*(.+?)\*', r'\1', response)      # Remove italic
-        response = re.sub(r'__(.+?)__', r'\1', response)      # Remove underline
-        response = re.sub(r'##\s*', '', response)             # Remove headers
-
-        # Convert bullet points to prose
-        # Pattern: lines starting with -, *, •, or numbers
-        lines = response.split('\n')
-        cleaned_lines = []
-        bullet_content = []
-
-        for line in lines:
-            stripped = line.strip()
-            # Check if line is a bullet point
-            if re.match(r'^[-*•]\s+', stripped) or re.match(r'^\d+\.\s+', stripped):
-                # Extract content after bullet
-                content = re.sub(r'^[-*•]\s+', '', stripped)
-                content = re.sub(r'^\d+\.\s+', '', content)
-                if content:
-                    bullet_content.append(content)
-            elif stripped:
-                # Regular line
-                if bullet_content:
-                    # Flush accumulated bullets as comma-separated
-                    cleaned_lines.append(', '.join(bullet_content) + '.')
-                    bullet_content = []
-                cleaned_lines.append(stripped)
-
-        # Flush any remaining bullets
-        if bullet_content:
-            cleaned_lines.append(', '.join(bullet_content) + '.')
-
-        response = ' '.join(cleaned_lines)
-
-        # Detect off-topic responses (not about archive data)
-        # Check for ACTUAL data mentions (numbers, statistics, specific schools)
-        response_lower = response.lower()
-
-        # Strong archive signals (actual data being reported)
-        has_numbers_with_context = bool(re.search(r'\d+\.?\d*\s*(gpa|gre|score|acceptance)', response_lower))
-        # Use word boundaries to avoid false matches (e.g., "maintain" containing "mit")
-        school_patterns = r'\b(mit|harvard|stanford|yale|princeton|berkeley|chicago|northwestern|columbia|nyu|duke|upenn)\b'
-        has_specific_school = bool(re.search(school_patterns, response_lower))
-        has_archive_metadata = any(word in response_lower for word in [
-            'archive', 'catalog', 'record', 'file', 'hexagon'
-        ])
-        has_data_summary = any(phrase in response_lower for phrase in [
-            'averaged', 'median', 'mean', 'minimum', 'maximum', 'ranged from',
-            'between', 'records show', 'cataloged'
-        ])
-
-        # Strong indicators this IS about archive data
-        is_about_data = has_numbers_with_context or has_specific_school or has_archive_metadata or has_data_summary
-
-        # Advice/general content indicators
-        advice_phrases = [
-            'consider the following', 'you should', 'try to', 'make sure',
-            'important to', 'help you', 'recommend', 'suggest', 'advice',
-            'set boundaries', 'take breaks', 'maintain', 'practice', 'stay organized',
-            'foundation for', 'protect your', 'manage'
-        ]
-        advice_count = sum(1 for phrase in advice_phrases if phrase in response_lower)
-
-        # If long response with lots of advice and NO data, it's off-topic
-        if len(response) > 150 and advice_count >= 3 and not is_about_data:
-            return "The archive doesn't contain that."
-
-        # If any advice but no data whatsoever, likely off-topic
-        if advice_count >= 5 and not is_about_data:
-            return "The archive doesn't contain that."
-
-        return response
-
     def _chat_completion(self, model: str, messages: list, temperature: float, max_tokens: int, stop: list = None) -> str:
         headers = {
             "Authorization": f"Bearer {OPENROUTER_API_KEY}",
@@ -510,8 +429,6 @@ Response: REQUEST_DATA: I need a count of interview invitations by school, order
 
         if response.startswith("DIRECT:"):
             direct_response = response[7:].strip()
-            # Clean and validate direct response
-            direct_response = self._clean_and_validate_response(direct_response)
             return False, direct_response
         elif response.startswith("REQUEST_DATA:"):
             data_request = response[13:].strip()
@@ -754,17 +671,13 @@ Be conversational and informative, not mechanical."""
         ]
 
         try:
-            # Moderate token limit for summaries + stop sequences to prevent lists/formatting
             response = self._chat_completion(
                 OPENROUTER_SUMMARY_MODEL,
                 messages,
                 temperature=0.2,
-                max_tokens=450,  # Enough for good summaries without being verbose
-                stop=["\n-", "\n*", "\n•", "\n1.", "\n2.", "\n3.", "**", "##", " | "]  # Stop on list markers and pipes
+                max_tokens=700
             )
             final_response = response.strip() or self.format_results(user_question, query_result)
-            # Clean and validate the response
-            final_response = self._clean_and_validate_response(final_response)
             print(f"Beatriz's full response ({len(final_response)} chars): {final_response}")
             return final_response
         except Exception as e:
