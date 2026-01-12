@@ -103,7 +103,13 @@ while i < len(rows) and count < 3:
 
         print('\n' + '=' * 80)
         count += 1
-        i += 3  # Skip main row + details row + comment row
+        # Dynamic row advancement based on what we found
+        rows_consumed = 1  # Main row
+        if 'tw-border-none' in details_class:
+            rows_consumed += 1
+            if 'tw-border-none' in comment_class:
+                rows_consumed += 1
+        i += rows_consumed
     else:
         i += 1
 

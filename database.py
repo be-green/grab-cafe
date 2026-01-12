@@ -48,6 +48,7 @@ def init_database():
                 gre_quant REAL,
                 gre_verbal REAL,
                 gre_aw REAL,
+                gre_combined REAL,
                 comment TEXT,
                 scraped_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 posted_to_discord BOOLEAN DEFAULT 0
@@ -55,6 +56,8 @@ def init_database():
         ''')
         if not _column_exists(conn, "date_added_iso"):
             cursor.execute('ALTER TABLE postings ADD COLUMN date_added_iso TEXT')
+        if not _column_exists(conn, "gre_combined"):
+            cursor.execute('ALTER TABLE postings ADD COLUMN gre_combined REAL')
         cursor.execute('''
             CREATE INDEX IF NOT EXISTS idx_gradcafe_id ON postings(gradcafe_id)
         ''')
@@ -99,23 +102,24 @@ def add_posting(posting: Dict) -> bool:
             cursor.execute('''
                 INSERT INTO postings (
                     gradcafe_id, school, program, degree, decision, date_added,
-                    date_added_iso, season, status, gpa, gre_quant, gre_verbal, gre_aw, comment
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    date_added_iso, season, status, gpa, gre_quant, gre_verbal, gre_aw, gre_combined, comment
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
                 posting['gradcafe_id'],
                 posting['school'],
                 posting['program'],
-                posting.get('degree', ''),
+                _null_if_empty(posting.get('degree')),
                 posting['decision'],
                 posting['date_added'],
                 _null_if_empty(posting.get('date_added_iso')),
-                posting.get('season', ''),
-                posting.get('status', ''),
+                _null_if_empty(posting.get('season')),
+                _null_if_empty(posting.get('status')),
                 _null_if_empty(posting.get('gpa')),
                 _null_if_empty(posting.get('gre_quant')),
                 _null_if_empty(posting.get('gre_verbal')),
                 _null_if_empty(posting.get('gre_aw')),
-                posting.get('comment', '')
+                _null_if_empty(posting.get('gre_combined')),
+                _null_if_empty(posting.get('comment'))
             ))
             return True
     except sqlite3.IntegrityError:
@@ -172,6 +176,7 @@ def refresh_aggregation_tables():
                 date_added_iso as decision_date,
                 gpa,
                 gre_quant as gre,
+                gre_combined,
                 CASE
                     WHEN decision LIKE '%Accepted%' THEN 'Accepted'
                     WHEN decision LIKE '%Rejected%' THEN 'Rejected'
@@ -195,6 +200,7 @@ def refresh_aggregation_tables():
                 date_added_iso as decision_date,
                 gpa,
                 gre_quant as gre,
+                gre_combined,
                 CASE
                     WHEN decision LIKE '%Accepted%' THEN 'Accepted'
                     WHEN decision LIKE '%Rejected%' THEN 'Rejected'
@@ -235,6 +241,8 @@ def format_posting_for_discord(posting: Dict) -> str:
         gre_parts.append(f"V:{posting['gre_verbal']}")
     if posting.get('gre_aw'):
         gre_parts.append(f"AW:{posting['gre_aw']}")
+    if posting.get('gre_combined'):
+        gre_parts.append(f"Total:{posting['gre_combined']}")
     if gre_parts:
         details.append(f"GRE: {' '.join(gre_parts)}")
 
