@@ -147,7 +147,7 @@ class GradCafeBotWithLLM(discord.Client):
             user_question = message.content.replace(f'<@{self.user.id}>', '').replace(f'<@!{self.user.id}>', '').strip()
 
             if not user_question:
-                await message.channel.send("Hi! Ask me anything about economics graduate admissions data. For example: 'What month do most acceptances come out?' or 'Which schools send the most interviews?'")
+                await message.channel.send("Hi! Ask me anything about economics and finance graduate admissions data. For example: 'What month do most acceptances come out?' or 'Which schools send the most interviews?'")
                 return
 
             # Check if user is requesting the last SQL query

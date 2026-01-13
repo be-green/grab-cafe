@@ -6,7 +6,10 @@ from datetime import datetime
 from typing import List, Dict, Optional
 from database import posting_exists, posting_exists_recent, add_posting
 
-GRADCAFE_BASE_URL = "https://www.thegradcafe.com/survey/?institution=&program=economics"
+GRADCAFE_PROGRAMS = [
+    "https://www.thegradcafe.com/survey/?institution=&program=economics",
+    "https://www.thegradcafe.com/survey/?institution=&program=finance",
+]
 
 # Degree pattern - order matters (longer patterns first to avoid partial matches)
 DEGREE_PATTERN = r'(PhD|Doctorate|Masters|Master|MBA|MPhil|MRes|MSc|MFA|MS|MA|JD|Other)$'
@@ -60,8 +63,10 @@ def _normalize_date(date_str: str) -> Optional[str]:
 
     return None
 
-def scrape_gradcafe_page(page: int = 1) -> List[Dict]:
-    url = GRADCAFE_BASE_URL if page == 1 else f"{GRADCAFE_BASE_URL}&page={page}"
+def scrape_gradcafe_page(page: int = 1, base_url: str = None) -> List[Dict]:
+    if base_url is None:
+        base_url = GRADCAFE_PROGRAMS[0]
+    url = base_url if page == 1 else f"{base_url}&page={page}"
 
     try:
         response = requests.get(url, timeout=30)
@@ -249,12 +254,12 @@ def scrape_gradcafe_page(page: int = 1) -> List[Dict]:
 
     return postings
 
-def scrape_gradcafe(num_pages: int = 1) -> List[Dict]:
+def scrape_gradcafe(num_pages: int = 1, base_url: str = None) -> List[Dict]:
     all_postings = []
 
     for page in range(1, num_pages + 1):
         print(f"Scraping page {page}/{num_pages}...")
-        postings = scrape_gradcafe_page(page)
+        postings = scrape_gradcafe_page(page, base_url=base_url)
         all_postings.extend(postings)
 
         if page < num_pages:
@@ -263,24 +268,28 @@ def scrape_gradcafe(num_pages: int = 1) -> List[Dict]:
     return all_postings
 
 def fetch_and_store_new_postings(use_recent_check: bool = True, days_back: int = 7) -> int:
-    postings = scrape_gradcafe_page(1)
     new_count = 0
 
-    for posting in postings:
-        exists = (
-            posting_exists_recent(posting['gradcafe_id'], days_back)
-            if use_recent_check else
-            posting_exists(posting['gradcafe_id'])
-        )
+    for base_url in GRADCAFE_PROGRAMS:
+        postings = scrape_gradcafe_page(1, base_url=base_url)
 
-        if not exists:
-            if add_posting(posting):
-                new_count += 1
-                print(f"New posting: {posting['school']} - {posting['program']} ({posting['decision']})")
+        for posting in postings:
+            exists = (
+                posting_exists_recent(posting['gradcafe_id'], days_back)
+                if use_recent_check else
+                posting_exists(posting['gradcafe_id'])
+            )
+
+            if not exists:
+                if add_posting(posting):
+                    new_count += 1
+                    print(f"New posting: {posting['school']} - {posting['program']} ({posting['decision']})")
 
     return new_count
 
-def scrape_all_history(start_page: int = 1, end_page: Optional[int] = None, batch_size: int = 50) -> int:
+def scrape_all_history(start_page: int = 1, end_page: Optional[int] = None, batch_size: int = 50, base_url: str = None) -> int:
+    if base_url is None:
+        base_url = GRADCAFE_PROGRAMS[0]
     if end_page is None:
         end_page = 1529
 
@@ -290,14 +299,13 @@ def scrape_all_history(start_page: int = 1, end_page: Optional[int] = None, batc
     page = start_page
     while page <= end_page:
         batch_end = min(page + batch_size - 1, end_page)
-        actual_batch_size = batch_end - page + 1
 
         print(f"\n{'='*80}")
         print(f"Processing pages {page} to {batch_end} (of {end_page})")
         print(f"{'='*80}")
 
         for current_page in range(page, batch_end + 1):
-            postings = scrape_gradcafe_page(current_page)
+            postings = scrape_gradcafe_page(current_page, base_url=base_url)
 
             for posting in postings:
                 if not posting_exists(posting['gradcafe_id']):
