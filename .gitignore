@@ -16,3 +16,6 @@ venv/
 env/
 .DS_Store
 *.csv
+
+# Rust
+target/
